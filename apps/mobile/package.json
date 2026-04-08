@@ -1,0 +1,38 @@
+{
+  "name": "mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "prebuild": "expo prebuild --platform android --clean",
+    "build:local": "eas build --platform android --local",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext .ts,.tsx"
+  },
+  "dependencies": {
+    "@runningl-es/shared": "workspace:*",
+    "@react-native-community/netinfo": "^11.3.2",
+    "@supabase/supabase-js": "^2.43.4",
+    "@nozbe/watermelondb": "^0.27.1",
+    "expo": "~51.0.0",
+    "expo-router": "~3.5.0",
+    "expo-location": "~17.0.1",
+    "expo-task-manager": "~11.8.2",
+    "expo-sensors": "~13.0.9",
+    "expo-status-bar": "~1.12.1",
+    "expo-splash-screen": "~0.27.5",
+    "react": "18.2.0",
+    "react-native": "0.74.2",
+    "react-native-maps": "1.14.0",
+    "zustand": "^4.5.2",
+    "zod": "^3.23.8",
+    "@mapbox/react-native-mapbox-gl": "^10.0.0-beta.3"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.24.5",
+    "@types/react": "~18.2.79",
+    "typescript": "^5.4.5"
+  }
+}
