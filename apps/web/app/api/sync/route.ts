@@ -143,21 +143,21 @@ async function pullChanges(userId: string, lastPulledAt: number | null) {
     ? new Date(lastPulledAt).toISOString()
     : new Date(0).toISOString()
 
-  const [{ data: sessions }, { data: gpsPoints }] = await Promise.all([
-    supabase
-      .from('sessions')
-      .select('*')
-      .eq('user_id', userId)
-      .gt('synced_at', since),
-    supabase
-      .from('gps_points')
-      .select('gps_points.*')
-      .gt('gps_points.recorded_at', since)
-      .in(
-        'session_id',
-        supabase.from('sessions').select('id').eq('user_id', userId),
-      ),
-  ])
+  const { data: sessions } = await supabase
+    .from('sessions')
+    .select('*')
+    .eq('user_id', userId)
+    .gt('synced_at', since)
+
+  const sessionIds = (sessions ?? []).map((s: { id: string }) => s.id)
+
+  const { data: gpsPoints } = sessionIds.length > 0
+    ? await supabase
+        .from('gps_points')
+        .select('id, session_id, recorded_at, latitude, longitude, altitude, accuracy, speed_mps, heading')
+        .in('session_id', sessionIds)
+        .gt('recorded_at', since)
+    : { data: [] }
 
   return {
     sessions: {
