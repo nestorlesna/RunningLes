@@ -51,7 +51,7 @@ export function OfflineMapManager({ currentRegion }: Props) {
     setDownloading(true)
     try {
       // Dynamic import to avoid crashing if Mapbox isn't configured
-      const MapboxGL = await import('@mapbox/react-native-mapbox-gl').then(
+      const MapboxGL = await import('@rnmapbox/maps').then(
         (m) => m.default,
       )
 
