@@ -9,7 +9,8 @@
     "prebuild": "expo prebuild --platform android --clean",
     "build:local": "eas build --platform android --local",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint . --ext .ts,.tsx"
+    "lint": "eslint . --ext .ts,.tsx",
+    "ios": "expo run:ios"
   },
   "dependencies": {
     "@runningl-es/shared": "workspace:*",
@@ -28,7 +29,7 @@
     "react-native-maps": "1.14.0",
     "zustand": "^4.5.2",
     "zod": "^3.23.8",
-    "@rnmapbox/maps": "^10.1.27"
+    "expo-constants": "~16.0.2"
   },
   "devDependencies": {
     "@babel/core": "^7.24.5",
