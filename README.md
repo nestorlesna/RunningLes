@@ -12,12 +12,14 @@ App personal de running/walking para Android. Registra recorridos con GPS en bac
 | Estado | Zustand |
 | DB local | WatermelonDB (SQLite) |
 | GPS | expo-location + expo-task-manager (Foreground Service) |
-| Mapa | react-native-maps con Google Maps (requiere API key) |
+| Mapa móvil | react-native-maps con Google Maps (requiere API key) |
 | Build APK | EAS Build (cloud, evita límite de 260 chars en Windows) |
 | Actualizaciones OTA | EAS Update (expo-updates) — sin nuevo APK |
 | Sesión persistente | AsyncStorage (@react-native-async-storage/async-storage) |
-| Backend API | Next.js 14 (API Routes only) |
-| Deploy API | Vercel (free tier) |
+| Web frontend | Next.js 14 (landing, login, dashboard, mapa de rutas) |
+| Mapa web | Leaflet + OpenStreetMap (sin API key) |
+| Backend API | Next.js 14 (API Routes) |
+| Deploy web + API | Vercel (free tier) |
 | Base de datos | Supabase (PostgreSQL + PostGIS) |
 | Autenticación | Supabase Auth |
 | Tipos compartidos | `packages/shared` (Zod schemas, utilidades) |
@@ -40,14 +42,22 @@ runningl-es/
 │   │   │   │   └── location/ # GPS background task y service
 │   │   │   └── store/        # Zustand (sessionStore, uiStore)
 │   │   └── android/          # Generado por expo prebuild (no committear)
-│   └── web/                  # Backend Next.js
-│       ├── app/api/
-│       │   ├── sync/         # POST /api/sync — WatermelonDB sync
-│       │   ├── sessions/     # GET/DELETE /api/sessions
-│       │   └── stats/        # GET /api/stats
+│   └── web/                  # Next.js (frontend + backend)
+│       ├── app/
+│       │   ├── page.tsx      # Landing page (/)
+│       │   ├── login/        # Login con Supabase (/login)
+│       │   ├── dashboard/    # Stats + historial (/dashboard)
+│       │   │   └── sessions/[id]  # Detalle + mapa de ruta
+│       │   └── api/
+│       │       ├── sync/     # POST /api/sync — WatermelonDB sync
+│       │       ├── sessions/ # GET/DELETE /api/sessions
+│       │       └── stats/    # GET /api/stats
+│       ├── components/
+│       │   └── RouteMap.tsx  # Mapa Leaflet (carga dinámica, sin SSR)
 │       └── lib/
-│           ├── supabase.ts   # Cliente service-role
-│           └── auth.ts       # Validación JWT
+│           ├── supabase.ts        # Cliente service-role (server only)
+│           ├── supabase-browser.ts # Cliente anon (browser)
+│           └── auth.ts            # Validación JWT
 ├── packages/
 │   └── shared/               # Tipos TS, schemas Zod, haversine, formatTime
 └── supabase/
@@ -60,7 +70,9 @@ runningl-es/
 
 | Servicio | URL |
 |---|---|
-| API (Vercel) | https://runningles-api.vercel.app |
+| Web (landing) | https://runningles-api.vercel.app |
+| Web (login) | https://runningles-api.vercel.app/login |
+| Web (dashboard) | https://runningles-api.vercel.app/dashboard |
 | API /stats | https://runningles-api.vercel.app/api/stats |
 | API /sessions | https://runningles-api.vercel.app/api/sessions |
 | Supabase proyecto | https://uladjlfafzcrnrrnbkpa.supabase.co |
@@ -98,14 +110,19 @@ EXPO_PUBLIC_API_BASE_URL=https://runningles-api.vercel.app
 EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=<API key de Google Maps>
 ```
 
-Crear `apps/web/.env.local` (copiar desde `.env.local.example`):
+Crear `apps/web/.env.local`:
 ```
+# Solo servidor (API routes) — nunca exponer al browser
 SUPABASE_URL=https://uladjlfafzcrnrrnbkpa.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=<service_role key de Supabase>
+
+# Browser (login, dashboard) — seguro exponer
+NEXT_PUBLIC_SUPABASE_URL=https://uladjlfafzcrnrrnbkpa.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key de Supabase>
 ```
 
 > Las keys están en **Supabase → Settings → API**.
-> `anon` key = pública (va en la app). `service_role` key = secreta (solo en el backend/Vercel).
+> `anon public` = pública (browser + app móvil). `service_role secret` = solo backend/Vercel.
 
 ### 3. Migraciones Supabase
 
@@ -136,8 +153,12 @@ Esto hace que el link del email de verificación abra la app directamente en lug
 En **vercel.com → runningles-api → Settings → Environment Variables** agregar:
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 
-Marcar ambas como **Production**.
+Marcar todas como **Production**.
+
+> Alternativa rápida: `cd apps/web && vercel env pull` descarga las variables automáticamente.
 
 ### 7. Configurar EAS CLI
 
@@ -146,6 +167,26 @@ npm install -g eas-cli
 cd apps/mobile
 eas login    # cuenta Expo (nestorcode)
 ```
+
+---
+
+## Prueba local (web)
+
+```bash
+cd apps/web
+pnpm dev
+```
+
+Abre http://localhost:3000 en el browser.
+
+| Ruta | Qué muestra |
+|---|---|
+| `/` | Landing page |
+| `/login` | Login con email/password |
+| `/dashboard` | Stats + historial de sesiones |
+| `/dashboard/sessions/[id]` | Detalle con mapa de ruta |
+
+> Requiere que `apps/web/.env.local` tenga las 4 variables configuradas. Ver sección **Variables de entorno**.
 
 ---
 
@@ -163,9 +204,9 @@ Responder:
 - Set up and deploy? → `Y`
 - Which scope? → cuenta personal
 - Link to existing project? → `N` (primera vez) o `Y` si ya existe
-- Root Directory en Vercel dashboard → dejar **vacío** (raíz del monorepo)
+- Root Directory en Vercel dashboard → `apps/web`
 
-> El archivo `apps/web/vercel.json` ya no existe — Vercel detecta automáticamente Next.js desde `apps/web` gracias a la configuración del proyecto.
+> El `vercel.json` en `apps/web/` ya configura el install y build command para el monorepo pnpm.
 
 ### Deploys futuros (nuevas versiones)
 
@@ -183,10 +224,19 @@ O conectar el repo a Vercel para **deploy automático en cada push a main**:
 ### Verificar que funciona
 
 ```bash
+# Landing page (debe cargar sin auth)
+curl -s -o /dev/null -w "%{http_code}" https://runningles-api.vercel.app
+# Esperado: 200
+
+# API (debe requerir auth)
 curl https://runningles-api.vercel.app/api/stats
-# Respuesta esperada: {"error":"Missing or invalid Authorization header"}
-# Eso significa que la API responde correctamente (requiere auth).
+# Esperado: {"error":"Missing or invalid Authorization header"}
 ```
+
+O abrir directamente en el browser:
+- https://runningles-api.vercel.app → landing page
+- https://runningles-api.vercel.app/login → login
+- https://runningles-api.vercel.app/dashboard → redirige a login si no estás autenticado
 
 ---
 
@@ -316,7 +366,7 @@ npm install -g pnpm
 ```
 
 ### "No Next.js version detected" en Vercel
-Verificar que el Root Directory en Vercel esté **vacío** (no `apps/web`).
+Verificar que el Root Directory en Vercel esté configurado como `apps/web` (Settings → General → Root Directory).
 
 ### Build local falla en Windows (path demasiado largo)
 Gradle en Windows supera el límite de 260 caracteres. Solución: usar **EAS Build** (cloud).
