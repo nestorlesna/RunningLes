@@ -3,11 +3,17 @@ import { ExpoConfig, ConfigContext } from 'expo/config'
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: 'RunningLes',
-  slug: 'runningl-es',
+  slug: 'running-les',
   version: '1.0.0',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'dark',
+  updates: {
+    url: 'https://u.expo.dev/e541fe62-a7e6-4bd4-843a-b1e31b10f55e',
+  },
+  runtimeVersion: {
+    policy: 'appVersion',
+  },
   splash: {
     image: './assets/splash.png',
     resizeMode: 'contain',
@@ -15,6 +21,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   android: {
     package: 'com.personal.runningl_es',
+    config: {
+      googleMaps: {
+        apiKey: 'AIzaSyCTp4TRXhcnjLAaJzf-8V-Y82AgvvSTFww',
+      },
+    },
     adaptiveIcon: {
       foregroundImage: './assets/adaptive-icon.png',
       backgroundColor: '#0f172a',
@@ -51,7 +62,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
     supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
     apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL,
-    eas: { projectId: '' },
+    eas: { projectId: 'e541fe62-a7e6-4bd4-843a-b1e31b10f55e' },
   },
-  scheme: 'runningl-es',
+  scheme: 'running-les',
 })

@@ -1,6 +1,5 @@
-import React, { useRef, useEffect } from 'react'
-import { StyleSheet } from 'react-native'
-import MapView, { Polyline, Marker, UrlTile, PROVIDER_DEFAULT } from 'react-native-maps'
+import React, { useRef, useEffect, Component, ReactNode } from 'react'
+import { StyleSheet, View, Text } from 'react-native'
 import type { GpsCoordinate } from '@runningl-es/shared'
 
 interface Props {
@@ -8,15 +7,35 @@ interface Props {
   isActive: boolean
 }
 
-const OSM_TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
+class MapErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false }
+  static getDerivedStateFromError() { return { failed: true } }
+  render() {
+    if (this.state.failed) {
+      return (
+        <View style={styles.mapFallback}>
+          <Text style={styles.mapFallbackText}>Mapa no disponible</Text>
+          <Text style={styles.mapFallbackSub}>GPS activo — recorrido guardado igual</Text>
+        </View>
+      )
+    }
+    return this.props.children
+  }
+}
 
-export function RunMap({ points, isActive }: Props) {
-  const mapRef = useRef<MapView>(null)
+function MapViewInner({ points, isActive }: Props) {
+  // Lazy-require to avoid crash at module load time
+  const {
+    default: MapView,
+    Polyline,
+    Marker,
+    PROVIDER_GOOGLE,
+  } = require('react-native-maps')
 
+  const mapRef = useRef<any>(null)
   const latLngs = points.map((p) => ({ latitude: p.latitude, longitude: p.longitude }))
   const currentPosition = points.at(-1)
 
-  // Auto-center on latest point during active session
   useEffect(() => {
     if (!isActive || !currentPosition) return
     mapRef.current?.animateToRegion(
@@ -48,34 +67,18 @@ export function RunMap({ points, isActive }: Props) {
     <MapView
       ref={mapRef}
       style={styles.map}
-      provider={PROVIDER_DEFAULT}
+      provider={PROVIDER_GOOGLE}
       initialRegion={initialRegion}
-      showsUserLocation={false}
+      showsUserLocation={true}
       showsMyLocationButton={false}
       rotateEnabled={false}
     >
-      {/* OpenStreetMap tiles — no API key required */}
-      <UrlTile
-        urlTemplate={OSM_TILE_URL}
-        maximumZ={19}
-        flipY={false}
-        tileSize={256}
-      />
-
       {latLngs.length > 1 && (
-        <Polyline
-          coordinates={latLngs}
-          strokeColor="#22c55e"
-          strokeWidth={4}
-        />
+        <Polyline coordinates={latLngs} strokeColor="#22c55e" strokeWidth={4} />
       )}
-
       {currentPosition && (
         <Marker
-          coordinate={{
-            latitude: currentPosition.latitude,
-            longitude: currentPosition.longitude,
-          }}
+          coordinate={{ latitude: currentPosition.latitude, longitude: currentPosition.longitude }}
           anchor={{ x: 0.5, y: 0.5 }}
           flat
         />
@@ -84,9 +87,23 @@ export function RunMap({ points, isActive }: Props) {
   )
 }
 
+export function RunMap(props: Props) {
+  return (
+    <MapErrorBoundary>
+      <MapViewInner {...props} />
+    </MapErrorBoundary>
+  )
+}
+
 const styles = StyleSheet.create({
-  map: {
+  map: { flex: 1, width: '100%' },
+  mapFallback: {
     flex: 1,
-    width: '100%',
+    backgroundColor: '#0f172a',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
   },
+  mapFallbackText: { color: '#475569', fontSize: 16, fontWeight: '600' },
+  mapFallbackSub: { color: '#334155', fontSize: 13 },
 })
