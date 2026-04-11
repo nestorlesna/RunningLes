@@ -12,7 +12,10 @@ App personal de running/walking para Android. Registra recorridos con GPS en bac
 | Estado | Zustand |
 | DB local | WatermelonDB (SQLite) |
 | GPS | expo-location + expo-task-manager (Foreground Service) |
-| Mapa | react-native-maps con OpenStreetMap (sin API key) |
+| Mapa | react-native-maps con Google Maps (requiere API key) |
+| Build APK | EAS Build (cloud, evita límite de 260 chars en Windows) |
+| Actualizaciones OTA | EAS Update (expo-updates) — sin nuevo APK |
+| Sesión persistente | AsyncStorage (@react-native-async-storage/async-storage) |
 | Backend API | Next.js 14 (API Routes only) |
 | Deploy API | Vercel (free tier) |
 | Base de datos | Supabase (PostgreSQL + PostGIS) |
@@ -60,7 +63,7 @@ runningl-es/
 | API (Vercel) | https://runningles-api.vercel.app |
 | API /stats | https://runningles-api.vercel.app/api/stats |
 | API /sessions | https://runningles-api.vercel.app/api/sessions |
-| Supabase proyecto | https://twdruhhhnsbrpyzlfxmg.supabase.co |
+| Supabase proyecto | https://uladjlfafzcrnrrnbkpa.supabase.co |
 | Vercel dashboard | https://vercel.com/nestor-lesnas-projects/runningles-api |
 | GitHub repo | https://github.com/nestorlesna/RunningLes |
 
@@ -89,14 +92,15 @@ pnpm install
 
 Crear `apps/mobile/.env` (copiar desde `.env.example`):
 ```
-EXPO_PUBLIC_SUPABASE_URL=https://twdruhhhnsbrpyzlfxmg.supabase.co
+EXPO_PUBLIC_SUPABASE_URL=https://uladjlfafzcrnrrnbkpa.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=<anon key de Supabase>
 EXPO_PUBLIC_API_BASE_URL=https://runningles-api.vercel.app
+EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=<API key de Google Maps>
 ```
 
 Crear `apps/web/.env.local` (copiar desde `.env.local.example`):
 ```
-SUPABASE_URL=https://twdruhhhnsbrpyzlfxmg.supabase.co
+SUPABASE_URL=https://uladjlfafzcrnrrnbkpa.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=<service_role key de Supabase>
 ```
 
@@ -110,13 +114,38 @@ En **Supabase → SQL Editor**, ejecutar en orden:
 1. `supabase/migrations/001_initial.sql`
 2. `supabase/migrations/002_weekly_distance_fn.sql`
 
-### 4. Variables de entorno en Vercel
+### 4. Variables de entorno en EAS (para builds de la app)
+
+En **expo.dev → proyecto running-les → Environment Variables** agregar:
+- `EXPO_PUBLIC_SUPABASE_URL`
+- `EXPO_PUBLIC_SUPABASE_ANON_KEY`
+- `EXPO_PUBLIC_API_BASE_URL`
+
+Environment: **Production**.
+
+### 5. Configurar Supabase para deep links (emails de confirmación)
+
+En **Supabase → Authentication → URL Configuration**:
+- **Site URL** → `running-les://`
+- **Redirect URLs** → agregar `running-les://`
+
+Esto hace que el link del email de verificación abra la app directamente en lugar de redirigir a `localhost`.
+
+### 6. Variables de entorno en Vercel
 
 En **vercel.com → runningles-api → Settings → Environment Variables** agregar:
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 
 Marcar ambas como **Production**.
+
+### 7. Configurar EAS CLI
+
+```bash
+npm install -g eas-cli
+cd apps/mobile
+eas login    # cuenta Expo (nestorcode)
+```
 
 ---
 
@@ -163,61 +192,98 @@ curl https://runningles-api.vercel.app/api/stats
 
 ## Build de la app Android
 
-### Configuración única (ya hecha)
+### Método recomendado: EAS Build (cloud)
 
-El archivo `apps/mobile/android/local.properties` **no se committea** y debe existir localmente con:
+En Windows, el límite de 260 caracteres en rutas impide compilar con Gradle local. Usamos **EAS Build** para compilar en la nube.
+
+#### Prerrequisitos únicos
+
+```bash
+npm install -g eas-cli
+cd apps/mobile
+eas login          # cuenta Expo
 ```
-sdk.dir=C\:\\Users\\nesto\\AppData\\Local\\Android\\Sdk
+
+#### Build APK (production)
+
+```bash
+cd apps/mobile
+eas build --platform android --profile production --non-interactive
 ```
 
-Si se borra (al hacer `prebuild --clean`), recrearlo con ese contenido.
+Al terminar, EAS entrega un link directo al APK:
+```
+🤖 Android app:
+https://expo.dev/artifacts/eas/....apk
+```
 
-### Generar el proyecto nativo
+Descargar e instalar:
+```bash
+# En el dispositivo: descargar desde el link y abrir el APK
+# (activar "Instalar desde fuentes desconocidas" en Ajustes)
 
-Solo necesario cuando cambian dependencias nativas o `app.config.ts`:
+# O via adb:
+adb install <ruta-local-al-apk>
+```
+
+#### Variables de entorno en EAS
+
+Las variables `EXPO_PUBLIC_*` deben cargarse en el dashboard de EAS:
+- **expo.dev → proyecto running-les → Environment Variables**
+- Cargar: `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`, `EXPO_PUBLIC_API_BASE_URL`
+- Environment: **Production**
+
+#### Google Maps API Key
+
+La API key de Google Maps va directamente en `app.config.ts` (campo `android.config.googleMaps.apiKey`). No hace falta variable de entorno ya que se embebe en el manifest nativo durante el build.
+
+Para restringir la key (recomendado):
+- Google Cloud Console → API key → Restricciones de aplicación → **Apps Android**
+- Package name: `com.personal.runningl_es`
+- SHA-1: obtener con `eas credentials`
+
+### Build local (alternativa, solo en Linux/Mac)
 
 ```bash
 cd apps/mobile
 npx expo prebuild --platform android --clean
-
-# Restaurar local.properties después del --clean:
-echo "sdk.dir=C\:\\Users\\nesto\\AppData\\Local\\Android\\Sdk" > android/local.properties
+cd android
+./gradlew assembleRelease
 ```
 
-### Build APK debug (para pruebas, standalone)
+> En Windows, el path de Gradle supera los 260 chars y el build falla. Usar EAS Build en su lugar.
 
-El APK debug incluye el bundle JS gracias a `bundleInDebug=true` en `gradle.properties`, no necesita Metro server corriendo.
+---
+
+## Actualizaciones OTA (EAS Update)
+
+La app tiene `expo-updates` integrado. Cuando hay cambios **solo en JS/TS** (pantallas, lógica, estilos), no hace falta un nuevo APK — se publica un update y los usuarios lo reciben automáticamente la próxima vez que abran la app.
+
+### ¿Cuándo usar EAS Update vs EAS Build?
+
+| Tipo de cambio | Qué hacer |
+|---|---|
+| Código JS/TS (pantallas, lógica, estilos) | `eas update` — segundos, sin APK nuevo |
+| Nueva dependencia nativa | `eas build` — nuevo APK (~20-30 min en cola free) |
+| Cambio en `app.config.ts` (permisos, plugins) | `eas build` — nuevo APK |
+| Cambio en backend | `vercel deploy --prod` |
+
+### Publicar un update OTA
 
 ```bash
-cd apps/mobile/android
-.\gradlew assembleDebug
+cd apps/mobile
+eas update --branch production --message "fix: descripción del cambio"
 ```
 
-APK generado en:
-```
-apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
-```
+Los usuarios reciben el update la próxima vez que abren la app (en background, sin interrupciones).
 
-Instalar en el dispositivo:
-```bash
-adb install apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
-```
-
-O copiar el APK manualmente al teléfono y abrirlo desde el gestor de archivos (activar "Instalar desde fuentes desconocidas").
-
-### Build APK release (distribución, pesa ~50MB)
+### Forzar un nuevo APK (cambios nativos)
 
 ```bash
-cd apps/mobile/android
-.\gradlew assembleRelease
+cd apps/mobile
+eas build --platform android --profile production --non-interactive
+# Al terminar: link directo al APK para descargar e instalar
 ```
-
-APK en:
-```
-apps/mobile/android/app/build/outputs/apk/release/app-release.apk
-```
-
-> El release requiere firma. Si no está configurada, generará un APK sin firmar que no se puede instalar directamente. Ver sección de firma más abajo.
 
 ---
 
@@ -228,25 +294,21 @@ apps/mobile/android/app/build/outputs/apk/release/app-release.apk
       ↓
 2. git commit + git push
       ↓
-3. ¿Cambios en el backend?
+3. ¿Cambios en el backend (apps/web)?
    → vercel deploy --prod
       ↓
-4. ¿Cambios en dependencias nativas o app.config.ts?
-   → expo prebuild --clean  (y restaurar local.properties)
-   → .\gradlew assembleDebug
-      ↓
-5. ¿Solo cambios en JS/TS de la app?
-   → .\gradlew assembleDebug  (sin prebuild)
-      ↓
-6. Instalar APK en el dispositivo
+4. ¿Cambios en la app?
+   → Solo JS/TS:
+      eas update --branch production --message "descripción"
+      (usuarios lo reciben automáticamente)
+   → Dependencias nativas / app.config.ts:
+      eas build --platform android --profile production --non-interactive
+      (descargar e instalar el nuevo APK)
 ```
 
 ---
 
 ## Solución de problemas conocidos
-
-### "Could not connect to development server"
-El APK debug por defecto busca Metro en `localhost:8081`. Solución: asegurarse de que `bundleInDebug=true` está en `apps/mobile/android/gradle.properties` y rebuildar.
 
 ### "pnpm: no se reconoce"
 ```bash
@@ -256,17 +318,27 @@ npm install -g pnpm
 ### "No Next.js version detected" en Vercel
 Verificar que el Root Directory en Vercel esté **vacío** (no `apps/web`).
 
-### "SDK location not found" en Gradle
-Recrear `apps/mobile/android/local.properties`:
-```
-sdk.dir=C\:\\Users\\nesto\\AppData\\Local\\Android\\Sdk
-```
+### Build local falla en Windows (path demasiado largo)
+Gradle en Windows supera el límite de 260 caracteres. Solución: usar **EAS Build** (cloud).
 
-### JVM crash durante Gradle build
-El heap es insuficiente. En `gradle.properties`:
-```
-org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m
-```
+### App se queda en splash / crash al iniciar
+- Revisar que WatermelonDB esté con `jsi: false` en `src/services/database/index.ts`.
+- Verificar que `react-native-safe-area-context`, `react-native-gesture-handler` y `react-native-reanimated` están en las dependencias de `apps/mobile/package.json`.
+
+### Mapa en blanco o "Access blocked"
+- OpenStreetMap bloquea requests desde emuladores. La app usa **Google Maps** (`PROVIDER_GOOGLE`).
+- Verificar que la Google Maps API key esté en `app.config.ts` → `android.config.googleMaps.apiKey`.
+
+### "captcha verification failed" en registro/login
+El proyecto de Supabase puede tener captcha activado. Verificar en **Supabase → Authentication → Settings → Enable captcha protection** y desactivarlo si es para desarrollo, o asegurarse de que el proyecto es el correcto (`uladjlfafzcrnrrnbkpa`).
+
+### Email de confirmación redirige a localhost
+Configurar en **Supabase → Authentication → URL Configuration**:
+- Site URL: `running-les://`
+- Redirect URLs: agregar `running-les://`
+
+### `eas update` no llega a los usuarios
+Verificar que el build fue compilado con el canal `production` (`channel: "production"` en `eas.json`). Un APK compilado sin canal no puede recibir updates OTA.
 
 ### pnpm install falla con ERR_PNPM_WORKSPACE_PKG_NOT_FOUND
 Verificar que existe `pnpm-workspace.yaml` en la raíz con:
@@ -318,15 +390,19 @@ Ambas tablas tienen RLS activo — cada usuario solo ve sus propios datos.
 
 ## Configuración verificada que funciona
 
-| Componente | Versión |
+| Componente | Versión / Detalle |
 |---|---|
 | Expo SDK | 51.0.0 |
 | React Native | 0.74.2 |
+| expo-router | 3.5.x |
 | Next.js | 14.2.35 |
-| Gradle | 8.6 |
-| AGP (Android Gradle Plugin) | según expo prebuild |
 | pnpm | 9.x |
 | Node.js | 20+ |
-| Java | 17+ |
-| `bundleInDebug` | true |
-| `reactNativeArchitectures` | arm64-v8a |
+| EAS CLI | 10.0+ |
+| expo-updates | 0.25.28 (OTA updates activo, canal `production`) |
+| AsyncStorage | 1.23.1 (sesión Supabase persiste entre reinicios) |
+| WatermelonDB JSI | **false** (JSI nativo causa crash en EAS builds) |
+| Proveedor de mapas | `PROVIDER_GOOGLE` (OSM bloqueado en producción) |
+| Metro config | monorepo-aware (`watchFolders` + `nodeModulesPaths`) |
+| Supabase proyecto | `uladjlfafzcrnrrnbkpa` (proyecto dedicado, sin captcha) |
+| Supabase deep link | Site URL = `running-les://` (emails abren la app) |

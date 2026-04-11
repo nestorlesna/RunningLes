@@ -8,7 +8,7 @@ const adapter = new SQLiteAdapter({
   schema: dbSchema,
   dbName: 'RunningLes',
   // migrations would go here for future schema changes
-  jsi: true, // use JSI for better performance on Android
+  jsi: false,
   onSetUpError: (error) => {
     console.error('[WatermelonDB] setup error:', error)
   },
