@@ -1,13 +1,14 @@
 import { Database } from '@nozbe/watermelondb'
 import SQLiteAdapter from '@nozbe/watermelondb/adapters/sqlite'
 import { dbSchema } from './schema'
+import { migrations } from './migrations'
 import Session from './models/Session'
 import GpsPoint from './models/GpsPoint'
 
 const adapter = new SQLiteAdapter({
   schema: dbSchema,
+  migrations,
   dbName: 'RunningLes',
-  // migrations would go here for future schema changes
   jsi: false,
   onSetUpError: (error) => {
     console.error('[WatermelonDB] setup error:', error)

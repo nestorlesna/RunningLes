@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx next:*)",
+      "Bash(node -e ':*)",
+      "Bash(npm install:*)",
+      "Bash(ls C:/DATOS/DESARROLLOS/React/RunningLes/node_modules/.pnpm/sharp*/node_modules/sharp/package.json)",
+      "Bash(node -e \"require\\('sharp'\\); console.log\\('ok'\\)\")",
+      "Bash(node -e \"require\\('sharp'\\); console.log\\('sharp ok'\\)\")",
+      "Bash(mkdir -p \"C:/tmp/icongen\")",
+      "Read(//c/tmp/**)",
+      "Bash(npm init:*)",
+      "Bash(node generate.js)"
+    ]
+  }
+}
