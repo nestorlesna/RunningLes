@@ -12,28 +12,28 @@ export const GpsCoordinateSchema = z.object({
 
 const SessionChangeSchema = z.object({
   id: z.string(),
-  localId: z.string(),
-  startedAt: z.string(),
-  endedAt: z.string().nullable().optional(),
-  durationSeconds: z.number().nullable().optional(),
-  distanceMeters: z.number().nullable().optional(),
-  avgPaceSecPerKm: z.number().nullable().optional(),
-  maxSpeedMps: z.number().nullable().optional(),
-  avgSpeedMps: z.number().nullable().optional(),
-  elevationGainMeters: z.number().nullable().optional(),
-  activityType: z.enum(['run', 'walk']).optional(),
+  local_id: z.string().nullable().optional(),
+  started_at: z.number(),           // Unix ms — WatermelonDB date columns
+  ended_at: z.number().nullable().optional(),
+  duration_seconds: z.number().nullable().optional(),
+  distance_meters: z.number().nullable().optional(),
+  avg_pace_sec_per_km: z.number().nullable().optional(),
+  max_speed_mps: z.number().nullable().optional(),
+  avg_speed_mps: z.number().nullable().optional(),
+  elevation_gain_meters: z.number().nullable().optional(),
+  activity_type: z.enum(['run', 'walk']).catch('run'),
   notes: z.string().nullable().optional(),
 })
 
 const GpsPointChangeSchema = z.object({
   id: z.string(),
-  sessionId: z.string(),
-  recordedAt: z.string(),
+  session_id: z.string(),
+  recorded_at: z.number(),          // Unix ms — WatermelonDB date columns
   latitude: z.number(),
   longitude: z.number(),
   altitude: z.number().nullable().optional(),
   accuracy: z.number().nullable().optional(),
-  speedMps: z.number().nullable().optional(),
+  speed_mps: z.number().nullable().optional(),
   heading: z.number().nullable().optional(),
 })
 
