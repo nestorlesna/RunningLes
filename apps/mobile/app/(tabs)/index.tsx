@@ -13,8 +13,66 @@ import { formatDuration } from '@runningl-es/shared'
 import type { UserStats } from '@runningl-es/shared'
 import Constants from 'expo-constants'
 import { supabase } from '../../src/lib/supabase'
+import { database } from '../../src/services/database'
+import Session from '../../src/services/database/models/Session'
+import { Q } from '@nozbe/watermelondb'
 
 const API_BASE_URL: string = Constants.expoConfig?.extra?.apiBaseUrl ?? ''
+
+function getWeekStart(date: Date): string {
+  const d = new Date(date)
+  const day = d.getDay()
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1) // Monday
+  d.setDate(diff)
+  d.setHours(0, 0, 0, 0)
+  return d.toISOString().slice(0, 10)
+}
+
+async function computeLocalStats(): Promise<UserStats> {
+  const col = database.get<Session>('sessions')
+  const records = await col.query(Q.where('ended_at', Q.notEq(null))).fetch()
+
+  let totalDistanceMeters = 0
+  let totalDurationSeconds = 0
+  let bestPaceSecPerKm: number | null = null
+  const weekMap: Record<string, number> = {}
+
+  for (const r of records) {
+    totalDistanceMeters += r.distanceMeters ?? 0
+    totalDurationSeconds += r.durationSeconds ?? 0
+
+    if (r.avgPaceSecPerKm && r.avgPaceSecPerKm > 0) {
+      if (bestPaceSecPerKm === null || r.avgPaceSecPerKm < bestPaceSecPerKm) {
+        bestPaceSecPerKm = r.avgPaceSecPerKm
+      }
+    }
+
+    const week = getWeekStart(r.startedAt)
+    weekMap[week] = (weekMap[week] ?? 0) + (r.distanceMeters ?? 0)
+  }
+
+  const eightWeeksAgo = new Date()
+  eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 56)
+  const weeklyDistance = Object.entries(weekMap)
+    .filter(([w]) => w >= eightWeeksAgo.toISOString().slice(0, 10))
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([weekStart, distanceMeters]) => ({ weekStart, distanceMeters }))
+
+  const pacedSessions = records.filter((r) => r.avgPaceSecPerKm && r.avgPaceSecPerKm > 0)
+  const avgPaceSecPerKm =
+    pacedSessions.length > 0
+      ? pacedSessions.reduce((sum, r) => sum + (r.avgPaceSecPerKm ?? 0), 0) / pacedSessions.length
+      : null
+
+  return {
+    totalSessions: records.length,
+    totalDistanceMeters,
+    totalDurationSeconds,
+    avgPaceSecPerKm,
+    bestPaceSecPerKm,
+    weeklyDistance,
+  }
+}
 
 export default function DashboardScreen() {
   const { isSyncing, lastSyncedAt, syncError } = useUIStore()
@@ -22,7 +80,12 @@ export default function DashboardScreen() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
-  async function fetchStats() {
+  async function loadStats() {
+    // Load local stats first so the screen always shows data
+    const local = await computeLocalStats()
+    setStats(local)
+
+    // Try to refresh from API in the background
     try {
       const { data: session } = await supabase.auth.getSession()
       const token = session?.session?.access_token
@@ -33,18 +96,18 @@ export default function DashboardScreen() {
       })
       if (res.ok) setStats(await res.json())
     } catch {
-      // Fail silently — data comes from local DB otherwise
+      // Fail silently — local stats are already shown
     }
   }
 
   useEffect(() => {
-    fetchStats().finally(() => setLoading(false))
+    loadStats().finally(() => setLoading(false))
   }, [])
 
   async function handleRefresh() {
     setRefreshing(true)
     await syncDatabase()
-    await fetchStats()
+    await loadStats()
     setRefreshing(false)
   }
 
