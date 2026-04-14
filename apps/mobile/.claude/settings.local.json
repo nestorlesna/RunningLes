@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" https://runningles-api.vercel.app/api/sync --max-time 10)",
+      "Bash(curl:*)"
+    ]
+  }
+}

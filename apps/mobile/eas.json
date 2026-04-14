@@ -8,6 +8,11 @@
       "android": {
         "buildType": "apk",
         "gradleCommand": ":app:assembleRelease"
+      },
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://uladjlfafzcrnrrnbkpa.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVsYWRqbGZhZnpjcm5ycm5ia3BhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3OTA4ODcsImV4cCI6MjA5MTM2Njg4N30.GZ-vTP-lo1Tc5eF-qZxjtc0pj2YoCrUsiWCiA1BKQv8",
+        "EXPO_PUBLIC_API_BASE_URL": "https://runningles-api.vercel.app"
       }
     },
     "production": {
@@ -15,6 +20,11 @@
       "android": {
         "buildType": "apk",
         "gradleCommand": ":app:assembleRelease"
+      },
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://uladjlfafzcrnrrnbkpa.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVsYWRqbGZhZnpjcm5ycm5ia3BhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3OTA4ODcsImV4cCI6MjA5MTM2Njg4N30.GZ-vTP-lo1Tc5eF-qZxjtc0pj2YoCrUsiWCiA1BKQv8",
+        "EXPO_PUBLIC_API_BASE_URL": "https://runningles-api.vercel.app"
       }
     }
   },
