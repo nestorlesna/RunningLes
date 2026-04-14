@@ -1,21 +1,25 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { supabaseBrowser } from '@/lib/supabase-browser'
 
-// Leaflet must be loaded client-side only (no SSR)
-const RouteMap = dynamic(() => import('@/components/RouteMap'), { ssr: false })
+const PointsMap = dynamic(() => import('@/components/PointsMap'), { ssr: false })
+
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 interface GpsPoint {
   id: string
+  session_id: string
+  recorded_at: string
   latitude: number
   longitude: number
   altitude: number | null
+  accuracy: number | null
   speed_mps: number | null
-  recorded_at: string
+  heading: number | null
 }
 
 interface SessionDetail {
@@ -32,6 +36,8 @@ interface SessionDetail {
   notes: string | null
   gpsPoints: GpsPoint[]
 }
+
+// ─── Formatters ──────────────────────────────────────────────────────────────
 
 function formatDistance(meters: number | null) {
   if (!meters) return '—'
@@ -70,20 +76,100 @@ function formatDate(iso: string) {
   })
 }
 
+const ACTIVITY_LABELS: Record<string, string> = {
+  run: 'Carrera',
+  walk: 'Caminata',
+  bike: 'Ciclismo',
+  other: 'Otro',
+}
+
+const ACTIVITY_EMOJI: Record<string, string> = {
+  run: '🏃',
+  walk: '🚶',
+  bike: '🚴',
+  other: '🏋️',
+}
+
+// ─── Haversine ───────────────────────────────────────────────────────────────
+
+function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000
+  const φ1 = (lat1 * Math.PI) / 180
+  const φ2 = (lat2 * Math.PI) / 180
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180
+  const Δλ = ((lon2 - lon1) * Math.PI) / 180
+  const a =
+    Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+/** Compute distance (in meters) from previous point for each point.
+ *  Index 0 → 0. Returns distances array and the anomalous indices set.
+ *  A gap is anomalous when dist > threshold × median of all gaps. */
+function computeGaps(
+  points: GpsPoint[],
+  threshold = 2
+): { distances: number[]; anomalousSet: Set<number> } {
+  if (points.length < 2) {
+    return { distances: points.map(() => 0), anomalousSet: new Set() }
+  }
+
+  const distances = points.map((p, i) => {
+    if (i === 0) return 0
+    return haversine(points[i - 1].latitude, points[i - 1].longitude, p.latitude, p.longitude)
+  })
+
+  const gaps = distances.slice(1) // exclude first (0)
+  const sorted = [...gaps].sort((a, b) => a - b)
+  const median = sorted[Math.floor(sorted.length / 2)]
+
+  const anomalousSet = new Set<number>()
+  distances.forEach((d, i) => {
+    if (i > 0 && d > threshold * median) anomalousSet.add(i)
+  })
+
+  return { distances, anomalousSet }
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
+
 export default function SessionDetailPage() {
   const router = useRouter()
   const params = useParams<{ id: string }>()
+
   const [session, setSession] = useState<SessionDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+  const [token, setToken] = useState<string>('')
 
+  // Edit session fields
+  const [editMode, setEditMode] = useState(false)
+  const [editActivityType, setEditActivityType] = useState('')
+  const [editNotes, setEditNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  // GPS point inline edit
+  const [editingPointId, setEditingPointId] = useState<string | null>(null)
+  const [editLat, setEditLat] = useState('')
+  const [editLng, setEditLng] = useState('')
+  const [savingPoint, setSavingPoint] = useState(false)
+  const [deletingPointId, setDeletingPointId] = useState<string | null>(null)
+
+  // Map/table cross-highlight
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
+  const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({})
+
+  // ── Load ──
   useEffect(() => {
     async function load() {
-      const { data: { session: authSession } } = await supabaseBrowser.auth.getSession()
+      const {
+        data: { session: authSession },
+      } = await supabaseBrowser.auth.getSession()
       if (!authSession) {
         router.push('/login')
         return
       }
+      setToken(authSession.access_token)
 
       const res = await fetch(`/api/sessions/${params.id}`, {
         headers: { Authorization: `Bearer ${authSession.access_token}` },
@@ -92,13 +178,102 @@ export default function SessionDetailPage() {
       if (!res.ok) {
         setNotFound(true)
       } else {
-        setSession(await res.json())
+        const data: SessionDetail = await res.json()
+        setSession(data)
+        setEditActivityType(data.activity_type)
+        setEditNotes(data.notes ?? '')
       }
       setLoading(false)
     }
-
     load()
   }, [params.id, router])
+
+  // ── Anomaly computation ──
+  const { distances, anomalousSet } = useMemo(
+    () => computeGaps(session?.gpsPoints ?? []),
+    [session?.gpsPoints]
+  )
+
+  // ── Save session metadata ──
+  async function handleSaveSession() {
+    if (!session) return
+    setSaving(true)
+    const res = await fetch(`/api/sessions/${session.id}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ activity_type: editActivityType, notes: editNotes }),
+    })
+    if (res.ok) {
+      const updated = await res.json()
+      setSession((s) => s && { ...s, activity_type: updated.activity_type, notes: updated.notes })
+      setEditMode(false)
+    }
+    setSaving(false)
+  }
+
+  // ── Delete GPS point ──
+  async function handleDeletePoint(pointId: string) {
+    if (!confirm('¿Eliminar este punto GPS?')) return
+    setDeletingPointId(pointId)
+    const res = await fetch(`/api/gps-points/${pointId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (res.ok) {
+      setSession((s) =>
+        s ? { ...s, gpsPoints: s.gpsPoints.filter((p) => p.id !== pointId) } : s
+      )
+      setSelectedIndex(null)
+    }
+    setDeletingPointId(null)
+  }
+
+  // ── Save edited GPS point ──
+  async function handleSavePoint(pointId: string) {
+    const lat = parseFloat(editLat)
+    const lng = parseFloat(editLng)
+    if (isNaN(lat) || isNaN(lng)) return
+    setSavingPoint(true)
+    const res = await fetch(`/api/gps-points/${pointId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ latitude: lat, longitude: lng }),
+    })
+    if (res.ok) {
+      const updated = await res.json()
+      setSession((s) =>
+        s
+          ? {
+              ...s,
+              gpsPoints: s.gpsPoints.map((p) =>
+                p.id === pointId
+                  ? { ...p, latitude: updated.latitude, longitude: updated.longitude }
+                  : p
+              ),
+            }
+          : s
+      )
+      setEditingPointId(null)
+    }
+    setSavingPoint(false)
+  }
+
+  // ── Select point from map → scroll table ──
+  function handleMapSelect(index: number) {
+    setSelectedIndex(index)
+    const point = session?.gpsPoints[index]
+    if (point && rowRefs.current[point.id]) {
+      rowRefs.current[point.id]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -119,50 +294,287 @@ export default function SessionDetailPage() {
     )
   }
 
+  const anomalyCount = anomalousSet.size
+
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8">
+    <div className="max-w-5xl mx-auto px-4 py-8">
       {/* Back */}
-      <Link href="/dashboard" className="text-sm text-gray-400 hover:text-brand transition-colors mb-6 inline-block">
+      <Link
+        href="/dashboard"
+        className="text-sm text-gray-400 hover:text-brand transition-colors mb-6 inline-block"
+      >
         ← Dashboard
       </Link>
 
-      {/* Title */}
-      <div className="mb-6">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="text-2xl">{session.activity_type === 'run' ? '🏃' : '🚶'}</span>
-          <h1 className="text-2xl font-bold capitalize">
-            {session.activity_type === 'run' ? 'Carrera' : 'Caminata'}
-          </h1>
-        </div>
-        <p className="text-gray-400 text-sm">{formatDate(session.started_at)}</p>
-      </div>
-
-      {/* Map */}
-      {session.gpsPoints.length > 0 ? (
-        <div className="h-72 sm:h-96 mb-6 rounded-xl overflow-hidden border border-gray-800">
-          <RouteMap points={session.gpsPoints} />
+      {/* ── Header / Edit form ── */}
+      {editMode ? (
+        <div className="bg-gray-900 border border-gray-700 rounded-xl p-5 mb-6">
+          <h2 className="text-sm text-gray-400 mb-4 font-medium">Editar sesión</h2>
+          <div className="flex flex-col gap-4">
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Tipo de actividad</label>
+              <select
+                value={editActivityType}
+                onChange={(e) => setEditActivityType(e.target.value)}
+                className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 w-full focus:outline-none focus:border-brand"
+              >
+                <option value="run">Carrera</option>
+                <option value="walk">Caminata</option>
+                <option value="bike">Ciclismo</option>
+                <option value="other">Otro</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Notas</label>
+              <textarea
+                value={editNotes}
+                onChange={(e) => setEditNotes(e.target.value)}
+                rows={3}
+                className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 w-full focus:outline-none focus:border-brand resize-none"
+                placeholder="Notas opcionales…"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handleSaveSession}
+                disabled={saving}
+                className="bg-brand text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-green-600 disabled:opacity-50 transition-colors"
+              >
+                {saving ? 'Guardando…' : 'Guardar'}
+              </button>
+              <button
+                onClick={() => setEditMode(false)}
+                className="text-gray-400 text-sm px-4 py-2 rounded-lg hover:text-white transition-colors"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
         </div>
       ) : (
-        <div className="h-32 mb-6 rounded-xl border border-gray-800 flex items-center justify-center text-gray-600 text-sm">
-          Sin puntos GPS registrados
+        <div className="flex items-start justify-between mb-6">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-2xl">
+                {ACTIVITY_EMOJI[session.activity_type] ?? '🏋️'}
+              </span>
+              <h1 className="text-2xl font-bold">
+                {ACTIVITY_LABELS[session.activity_type] ?? session.activity_type}
+              </h1>
+            </div>
+            <p className="text-gray-400 text-sm">{formatDate(session.started_at)}</p>
+            {session.notes && (
+              <p className="text-gray-300 text-sm mt-2 max-w-lg">{session.notes}</p>
+            )}
+          </div>
+          <button
+            onClick={() => setEditMode(true)}
+            className="text-xs text-gray-400 border border-gray-700 rounded-lg px-3 py-1.5 hover:border-gray-500 hover:text-white transition-colors"
+          >
+            Editar
+          </button>
         </div>
       )}
 
-      {/* Stats grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
+      {/* ── Stats grid ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
         <StatCard label="Distancia" value={formatDistance(session.distance_meters)} />
         <StatCard label="Duración" value={formatDuration(session.duration_seconds)} />
         <StatCard label="Ritmo promedio" value={formatPace(session.avg_pace_sec_per_km)} />
-        <StatCard label="Velocidad promedio" value={formatSpeed(session.avg_speed_mps)} />
-        <StatCard label="Velocidad máxima" value={formatSpeed(session.max_speed_mps)} />
+        <StatCard label="Vel. promedio" value={formatSpeed(session.avg_speed_mps)} />
+        <StatCard label="Vel. máxima" value={formatSpeed(session.max_speed_mps)} />
         <StatCard label="Puntos GPS" value={String(session.gpsPoints.length)} />
       </div>
 
-      {/* Notes */}
-      {session.notes && (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-          <p className="text-xs text-gray-500 mb-1">Notas</p>
-          <p className="text-sm text-gray-300">{session.notes}</p>
+      {/* ── Map ── */}
+      <div className="h-80 sm:h-96 mb-6 rounded-xl overflow-hidden border border-gray-800">
+        {session.gpsPoints.length > 0 ? (
+          <PointsMap
+            points={session.gpsPoints}
+            anomalousSet={anomalousSet}
+            selectedIndex={selectedIndex}
+            onSelect={handleMapSelect}
+          />
+        ) : (
+          <div className="h-full flex items-center justify-center text-gray-600 text-sm">
+            Sin puntos GPS registrados
+          </div>
+        )}
+      </div>
+
+      {/* ── GPS Points table ── */}
+      {session.gpsPoints.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-base font-semibold">Puntos GPS</h2>
+            <div className="flex items-center gap-3 text-xs text-gray-500">
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500" />
+                Normal
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500" />
+                Anomalía ({anomalyCount})
+              </span>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto rounded-xl border border-gray-800">
+            <table className="w-full text-xs text-left">
+              <thead>
+                <tr className="border-b border-gray-800 text-gray-500">
+                  <th className="px-3 py-2.5 font-medium">#</th>
+                  <th className="px-3 py-2.5 font-medium">Hora</th>
+                  <th className="px-3 py-2.5 font-medium">Latitud</th>
+                  <th className="px-3 py-2.5 font-medium">Longitud</th>
+                  <th className="px-3 py-2.5 font-medium">Alt (m)</th>
+                  <th className="px-3 py-2.5 font-medium">Vel</th>
+                  <th className="px-3 py-2.5 font-medium">Dist. prev</th>
+                  <th className="px-3 py-2.5 font-medium">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {session.gpsPoints.map((point, i) => {
+                  const isAnomaly = anomalousSet.has(i)
+                  const isSelected = i === selectedIndex
+                  const distPrev = distances[i]
+                  const isEditing = editingPointId === point.id
+
+                  return (
+                    <tr
+                      key={point.id}
+                      ref={(el) => { rowRefs.current[point.id] = el }}
+                      onClick={() => !isEditing && setSelectedIndex(i)}
+                      className={[
+                        'border-b border-gray-800/60 cursor-pointer transition-colors',
+                        isSelected ? 'bg-gray-700/60' : isAnomaly ? 'bg-red-950/30' : 'hover:bg-gray-800/40',
+                      ].join(' ')}
+                    >
+                      <td className="px-3 py-2 text-gray-400">
+                        {isAnomaly ? (
+                          <span className="text-red-400 font-bold">{i + 1}</span>
+                        ) : (
+                          i + 1
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-gray-300 whitespace-nowrap">
+                        {new Date(point.recorded_at).toLocaleTimeString('es-AR')}
+                      </td>
+
+                      {/* Lat / Lng — editable */}
+                      {isEditing ? (
+                        <>
+                          <td className="px-3 py-1.5" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="number"
+                              step="0.000001"
+                              value={editLat}
+                              onChange={(e) => setEditLat(e.target.value)}
+                              className="w-28 bg-gray-800 border border-gray-600 text-white text-xs rounded px-2 py-1 focus:outline-none focus:border-brand"
+                            />
+                          </td>
+                          <td className="px-3 py-1.5" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="number"
+                              step="0.000001"
+                              value={editLng}
+                              onChange={(e) => setEditLng(e.target.value)}
+                              className="w-28 bg-gray-800 border border-gray-600 text-white text-xs rounded px-2 py-1 focus:outline-none focus:border-brand"
+                            />
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-3 py-2 font-mono text-gray-300">
+                            {point.latitude.toFixed(6)}
+                          </td>
+                          <td className="px-3 py-2 font-mono text-gray-300">
+                            {point.longitude.toFixed(6)}
+                          </td>
+                        </>
+                      )}
+
+                      <td className="px-3 py-2 text-gray-400">
+                        {point.altitude !== null ? Math.round(point.altitude) : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-gray-400">
+                        {point.speed_mps !== null ? `${(point.speed_mps * 3.6).toFixed(1)}` : '—'}
+                      </td>
+
+                      {/* Distance from previous */}
+                      <td className="px-3 py-2">
+                        {i === 0 ? (
+                          <span className="text-gray-600">—</span>
+                        ) : (
+                          <span
+                            className={
+                              isAnomaly
+                                ? 'text-red-400 font-bold'
+                                : 'text-gray-400'
+                            }
+                          >
+                            {distPrev >= 1000
+                              ? `${(distPrev / 1000).toFixed(2)} km`
+                              : `${Math.round(distPrev)} m`}
+                            {isAnomaly && ' ⚠️'}
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Actions */}
+                      <td
+                        className="px-3 py-2"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex items-center gap-2">
+                          {isEditing ? (
+                            <>
+                              <button
+                                onClick={() => handleSavePoint(point.id)}
+                                disabled={savingPoint}
+                                className="text-brand hover:text-green-400 font-medium disabled:opacity-50"
+                              >
+                                {savingPoint ? '…' : 'Guardar'}
+                              </button>
+                              <button
+                                onClick={() => setEditingPointId(null)}
+                                className="text-gray-500 hover:text-gray-300"
+                              >
+                                Cancelar
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => {
+                                  setEditingPointId(point.id)
+                                  setEditLat(String(point.latitude))
+                                  setEditLng(String(point.longitude))
+                                }}
+                                className="text-gray-400 hover:text-white transition-colors"
+                              >
+                                Editar
+                              </button>
+                              <button
+                                onClick={() => handleDeletePoint(point.id)}
+                                disabled={deletingPointId === point.id}
+                                className="text-red-500 hover:text-red-400 transition-colors disabled:opacity-50"
+                              >
+                                {deletingPointId === point.id ? '…' : 'Borrar'}
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-gray-600 mt-2">
+            Hacé click en un punto de la tabla o del mapa para resaltarlo.
+          </p>
         </div>
       )}
     </div>

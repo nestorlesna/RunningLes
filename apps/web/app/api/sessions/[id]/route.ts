@@ -37,6 +37,42 @@ export async function GET(req: NextRequest, { params }: Params) {
   }
 }
 
+export async function PATCH(req: NextRequest, { params }: Params) {
+  try {
+    const user = await getAuthenticatedUser(req)
+    const body = await req.json()
+
+    const allowed = ['activity_type', 'notes'] as const
+    const updates: Record<string, unknown> = {}
+    for (const key of allowed) {
+      if (key in body) updates[key] = body[key]
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 })
+    }
+
+    const { data, error } = await supabase
+      .from('sessions')
+      .update(updates)
+      .eq('id', params.id)
+      .eq('user_id', user.id)
+      .select()
+      .single()
+
+    if (error) throw error
+    if (!data) return NextResponse.json({ error: 'Session not found' }, { status: 404 })
+
+    return NextResponse.json(data)
+  } catch (err) {
+    if (err instanceof AuthError) {
+      return NextResponse.json({ error: err.message }, { status: err.statusCode })
+    }
+    console.error('[PATCH /sessions/:id]', err)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
 export async function DELETE(req: NextRequest, { params }: Params) {
   try {
     const user = await getAuthenticatedUser(req)
