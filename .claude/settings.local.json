@@ -10,7 +10,9 @@
       "Bash(mkdir -p \"C:/tmp/icongen\")",
       "Read(//c/tmp/**)",
       "Bash(npm init:*)",
-      "Bash(node generate.js)"
+      "Bash(node generate.js)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)"
     ]
   }
 }

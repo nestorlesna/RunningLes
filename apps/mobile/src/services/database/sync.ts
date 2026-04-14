@@ -20,7 +20,10 @@ export async function syncDatabase(): Promise<void> {
   if (useUIStore.getState().isSyncing) return
 
   const token = await getAccessToken()
-  if (!token) return // Not authenticated, skip
+  if (!token) {
+    setSyncError('Sin sesión activa — iniciá sesión para sincronizar')
+    return
+  }
 
   setSyncing(true)
 
