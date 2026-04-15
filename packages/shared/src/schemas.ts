@@ -21,7 +21,7 @@ const SessionChangeSchema = z.object({
   max_speed_mps: z.number().nullable().optional(),
   avg_speed_mps: z.number().nullable().optional(),
   elevation_gain_meters: z.number().nullable().optional(),
-  activity_type: z.enum(['run', 'walk']).catch('run'),
+  activity_type: z.enum(['run', 'walk', 'bike']).catch('run'),
   notes: z.string().nullable().optional(),
 })
 

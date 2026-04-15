@@ -51,17 +51,15 @@ function RootLayout() {
     // Deep link: app ya abierta y llega el link
     const linkSub = Linking.addEventListener('url', ({ url }) => handleAuthDeepLink(url))
 
-    let stopListeners: (() => void) | null = null
     Promise.resolve()
       .then(() => {
         require('../src/services/location/backgroundTask')
-        const { startSyncListeners, stopSyncListeners } = require('../src/services/database/sync')
-        startSyncListeners()
-        stopListeners = stopSyncListeners
+        const { syncDatabase } = require('../src/services/database/sync')
+        syncDatabase()
       })
       .catch((e) => console.warn('[layout] service init error:', e))
 
-    return () => { linkSub.remove(); stopListeners?.() }
+    return () => { linkSub.remove() }
   }, [])
 
   return (

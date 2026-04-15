@@ -36,7 +36,7 @@ export function StartButton({ onStarted }: Props) {
   return (
     <View style={styles.container}>
       <View style={styles.typeSelector}>
-        {(['run', 'walk'] as ActivityType[]).map((type) => (
+        {(['run', 'walk', 'bike'] as ActivityType[]).map((type) => (
           <TouchableOpacity
             key={type}
             style={[styles.typeBtn, selectedType === type && styles.typeBtnActive]}
@@ -48,7 +48,7 @@ export function StartButton({ onStarted }: Props) {
                 selectedType === type && styles.typeBtnTextActive,
               ]}
             >
-              {type === 'run' ? '🏃 Correr' : '🚶 Caminar'}
+              {type === 'run' ? '🏃 Correr' : type === 'walk' ? '🚶 Caminar' : '🚴 Ciclismo'}
             </Text>
           </TouchableOpacity>
         ))}

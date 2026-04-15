@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { supabaseBrowser } from '@/lib/supabase-browser'
+import { GpsChart } from '@/components/GpsChart'
 
 const PointsMap = dynamic(() => import('@/components/PointsMap'), { ssr: false })
 
@@ -155,6 +156,14 @@ export default function SessionDetailPage() {
   const [savingPoint, setSavingPoint] = useState(false)
   const [deletingPointId, setDeletingPointId] = useState<string | null>(null)
 
+  // GPS table collapse
+  const [gpsExpanded, setGpsExpanded] = useState(false)
+
+  // Chart collapse states
+  const [speedExpanded, setSpeedExpanded] = useState(false)
+  const [distExpanded, setDistExpanded] = useState(false)
+  const [altExpanded, setAltExpanded] = useState(false)
+
   // Map/table cross-highlight
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({})
@@ -193,6 +202,43 @@ export default function SessionDetailPage() {
     () => computeGaps(session?.gpsPoints ?? []),
     [session?.gpsPoints]
   )
+
+  // ── Chart data ──
+  const t0 = session?.gpsPoints[0]
+    ? new Date(session.gpsPoints[0].recorded_at).getTime()
+    : 0
+
+  const speedChartData = useMemo(() => {
+    if (!session) return []
+    return session.gpsPoints
+      .filter((p) => p.speed_mps !== null && p.speed_mps >= 0)
+      .map((p) => ({
+        t: (new Date(p.recorded_at).getTime() - t0) / 1000,
+        v: p.speed_mps! * 3.6,
+      }))
+  }, [session?.gpsPoints, t0])
+
+  const distanceChartData = useMemo(() => {
+    if (!session) return []
+    let acc = 0
+    return session.gpsPoints.map((p, i) => {
+      acc += distances[i] ?? 0
+      return {
+        t: (new Date(p.recorded_at).getTime() - t0) / 1000,
+        v: acc / 1000,
+      }
+    })
+  }, [session?.gpsPoints, distances, t0])
+
+  const altitudeChartData = useMemo(() => {
+    if (!session) return []
+    return session.gpsPoints
+      .filter((p) => p.altitude !== null)
+      .map((p) => ({
+        t: (new Date(p.recorded_at).getTime() - t0) / 1000,
+        v: p.altitude!,
+      }))
+  }, [session?.gpsPoints, t0])
 
   // ── Save session metadata ──
   async function handleSaveSession() {
@@ -295,6 +341,16 @@ export default function SessionDetailPage() {
   }
 
   const anomalyCount = anomalousSet.size
+
+  function formatChartTime(seconds: number): string {
+    const m = Math.floor(seconds / 60)
+    const s = Math.floor(seconds % 60)
+    if (m >= 60) {
+      const h = Math.floor(m / 60)
+      return `${h}:${String(m % 60).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+    }
+    return `${m}:${String(s).padStart(2, '0')}`
+  }
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
@@ -405,21 +461,43 @@ export default function SessionDetailPage() {
       {/* ── GPS Points table ── */}
       {session.gpsPoints.length > 0 && (
         <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-base font-semibold">Puntos GPS</h2>
-            <div className="flex items-center gap-3 text-xs text-gray-500">
-              <span className="flex items-center gap-1">
-                <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500" />
-                Normal
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500" />
-                Anomalía ({anomalyCount})
+          <button
+            onClick={() => setGpsExpanded((v) => !v)}
+            className="w-full flex items-center justify-between mb-3 group"
+          >
+            <h2 className="text-base font-semibold group-hover:text-brand transition-colors">
+              Puntos GPS
+            </h2>
+            <div className="flex items-center gap-3">
+              {!gpsExpanded && anomalyCount > 0 && (
+                <span className="text-xs text-red-400 flex items-center gap-1">
+                  <span className="inline-block w-2 h-2 rounded-full bg-red-500" />
+                  {anomalyCount} anomalía{anomalyCount !== 1 ? 's' : ''}
+                </span>
+              )}
+              <span className="text-xs text-gray-500 flex items-center gap-1">
+                {session.gpsPoints.length} puntos
+                <span className="text-gray-500 text-base leading-none">
+                  {gpsExpanded ? '▲' : '▼'}
+                </span>
               </span>
             </div>
-          </div>
+          </button>
 
-          <div className="overflow-x-auto rounded-xl border border-gray-800">
+          {gpsExpanded && (
+            <>
+              <div className="flex items-center justify-end gap-3 text-xs text-gray-500 mb-3">
+                <span className="flex items-center gap-1">
+                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500" />
+                  Normal
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500" />
+                  Anomalía ({anomalyCount})
+                </span>
+              </div>
+
+              <div className="overflow-x-auto rounded-xl border border-gray-800">
             <table className="w-full text-xs text-left">
               <thead>
                 <tr className="border-b border-gray-800 text-gray-500">
@@ -571,10 +649,100 @@ export default function SessionDetailPage() {
                 })}
               </tbody>
             </table>
+              </div>
+              <p className="text-xs text-gray-600 mt-2">
+                Hacé click en un punto de la tabla o del mapa para resaltarlo.
+              </p>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── Charts ── */}
+      {session.gpsPoints.length > 1 && (
+        <div className="flex flex-col gap-3 mt-6">
+
+          {/* Speed */}
+          <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+            <button
+              onClick={() => setSpeedExpanded((v) => !v)}
+              className="w-full flex items-center justify-between px-4 py-3 group"
+            >
+              <span className="text-sm font-semibold group-hover:text-brand transition-colors">
+                Velocidad
+              </span>
+              <span className="text-xs text-gray-500">
+                {speedExpanded ? '▲' : '▼'}
+              </span>
+            </button>
+            {speedExpanded && (
+              <div className="px-2 pb-3">
+                <GpsChart
+                  data={speedChartData}
+                  color="#22c55e"
+                  formatY={(v) => `${v.toFixed(1)} km/h`}
+                  formatX={formatChartTime}
+                  yUnit="speed"
+                  noDataMessage="Sin datos de velocidad"
+                />
+              </div>
+            )}
           </div>
-          <p className="text-xs text-gray-600 mt-2">
-            Hacé click en un punto de la tabla o del mapa para resaltarlo.
-          </p>
+
+          {/* Distance */}
+          <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+            <button
+              onClick={() => setDistExpanded((v) => !v)}
+              className="w-full flex items-center justify-between px-4 py-3 group"
+            >
+              <span className="text-sm font-semibold group-hover:text-brand transition-colors">
+                Distancia acumulada
+              </span>
+              <span className="text-xs text-gray-500">
+                {distExpanded ? '▲' : '▼'}
+              </span>
+            </button>
+            {distExpanded && (
+              <div className="px-2 pb-3">
+                <GpsChart
+                  data={distanceChartData}
+                  color="#3b82f6"
+                  formatY={(v) => `${v.toFixed(2)} km`}
+                  formatX={formatChartTime}
+                  yUnit="distance"
+                  noDataMessage="Sin datos de distancia"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Altitude */}
+          <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+            <button
+              onClick={() => setAltExpanded((v) => !v)}
+              className="w-full flex items-center justify-between px-4 py-3 group"
+            >
+              <span className="text-sm font-semibold group-hover:text-brand transition-colors">
+                Altitud
+              </span>
+              <span className="text-xs text-gray-500">
+                {altExpanded ? '▲' : '▼'}
+              </span>
+            </button>
+            {altExpanded && (
+              <div className="px-2 pb-3">
+                <GpsChart
+                  data={altitudeChartData}
+                  color="#f59e0b"
+                  formatY={(v) => `${Math.round(v)} m`}
+                  formatX={formatChartTime}
+                  yUnit="altitude"
+                  noDataMessage="Sin datos de altitud"
+                />
+              </div>
+            )}
+          </div>
+
         </div>
       )}
     </div>

@@ -1,16 +1,10 @@
 import { synchronize } from '@nozbe/watermelondb/sync'
-import { AppState, AppStateStatus } from 'react-native'
-import NetInfo from '@react-native-community/netinfo'
 import { database } from './index'
+import Session from './models/Session'
 import { supabase } from '../../lib/supabase'
 import { useUIStore } from '../../store/uiStore'
 
 const API_BASE_URL: string = process.env.EXPO_PUBLIC_API_BASE_URL ?? ''
-
-// Minimum ms to wait after a failed sync before retrying via listeners.
-// Prevents hundreds of rapid retries when the network is unstable.
-const SYNC_ERROR_COOLDOWN_MS = 30_000
-let lastSyncErrorAt: number | null = null
 
 async function getAccessToken(): Promise<string | null> {
   const { data } = await supabase.auth.getSession()
@@ -22,9 +16,6 @@ export async function syncDatabase(): Promise<void> {
 
   // Avoid concurrent syncs
   if (useUIStore.getState().isSyncing) return
-
-  // Don't retry within cooldown window after a failure
-  if (lastSyncErrorAt !== null && Date.now() - lastSyncErrorAt < SYNC_ERROR_COOLDOWN_MS) return
 
   if (!API_BASE_URL) {
     setSyncError('URL del servidor no configurada — rebuild la app')
@@ -102,7 +93,6 @@ export async function syncDatabase(): Promise<void> {
         }
 
         const json = await res.json()
-        lastSyncErrorAt = null
         setSyncSuccess(json.timestamp)
       },
 
@@ -110,41 +100,119 @@ export async function syncDatabase(): Promise<void> {
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Sync error'
-    lastSyncErrorAt = Date.now()
     setSyncError(message)
     console.warn('[sync] error:', message)
   }
 }
 
 // ---------------------------------------------------------------------------
-// Auto-sync listeners
+// Pull from server — updates only sessions that already exist locally
 // ---------------------------------------------------------------------------
 
-let unsubscribeNetInfo: (() => void) | null = null
-let appStateListener: { remove: () => void } | null = null
+interface ServerSession {
+  id: string
+  activity_type: string
+  notes: string | null
+  duration_seconds: number | null
+  distance_meters: number | null
+  avg_pace_sec_per_km: number | null
+  max_speed_mps: number | null
+  avg_speed_mps: number | null
+}
 
-export function startSyncListeners(): void {
-  // Sync when network becomes available
-  unsubscribeNetInfo = NetInfo.addEventListener((state) => {
-    if (state.isConnected && state.isInternetReachable) {
-      syncDatabase()
+export async function pullFromServer(): Promise<void> {
+  const { setPulling, setPullSuccess, setPullError } = useUIStore.getState()
+
+  if (useUIStore.getState().isPulling) return
+
+  if (!API_BASE_URL) {
+    setPullError('URL del servidor no configurada — rebuild la app')
+    return
+  }
+
+  const token = await getAccessToken()
+  if (!token) {
+    setPullError('Sin sesión activa — iniciá sesión para sincronizar')
+    return
+  }
+
+  setPulling(true)
+
+  try {
+    // 1. Collect IDs of all sessions already on this device that have been synced
+    //    (synced === true means the server knows about them)
+    const sessionCollection = database.get<Session>('sessions')
+    const localSessions = await sessionCollection.query().fetch()
+    const syncedIds = localSessions.filter((s) => s.synced).map((s) => s.id)
+
+    if (syncedIds.length === 0) {
+      setPullSuccess(0)
+      return
     }
-  })
 
-  // Sync when app comes to foreground
-  appStateListener = AppState.addEventListener(
-    'change',
-    (nextState: AppStateStatus) => {
-      if (nextState === 'active') {
-        syncDatabase()
+    // 2. Fetch current server state for those IDs only
+    const res = await fetch(`${API_BASE_URL}/api/sessions/pull`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ ids: syncedIds }),
+    })
+
+    if (!res.ok) {
+      const body = await res.text()
+      throw new Error(`Pull failed: ${res.status} ${body}`)
+    }
+
+    const { sessions: serverSessions }: { sessions: ServerSession[] } = await res.json()
+
+    if (serverSessions.length === 0) {
+      setPullSuccess(0)
+      return
+    }
+
+    // 3. Build a lookup map for fast access
+    const serverMap = new Map<string, ServerSession>(
+      serverSessions.map((s) => [s.id, s]),
+    )
+
+    // 4. Update only local sessions whose server data differs
+    let updatedCount = 0
+    await database.write(async () => {
+      for (const local of localSessions) {
+        const server = serverMap.get(local.id)
+        if (!server) continue
+
+        const changed =
+          local.activityType !== server.activity_type ||
+          (local.notes ?? null) !== (server.notes ?? null) ||
+          local.durationSeconds !== server.duration_seconds ||
+          local.distanceMeters !== server.distance_meters ||
+          local.avgPaceSecPerKm !== server.avg_pace_sec_per_km ||
+          local.maxSpeedMps !== server.max_speed_mps ||
+          local.avgSpeedMps !== server.avg_speed_mps
+
+        if (!changed) continue
+
+        await local.update((record) => {
+          record.activityType = server.activity_type as Session['activityType']
+          record.notes = server.notes
+          record.durationSeconds = server.duration_seconds
+          record.distanceMeters = server.distance_meters
+          record.avgPaceSecPerKm = server.avg_pace_sec_per_km
+          record.maxSpeedMps = server.max_speed_mps
+          record.avgSpeedMps = server.avg_speed_mps
+        })
+        updatedCount++
       }
-    },
-  )
+    })
+
+    setPullSuccess(updatedCount)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Error desconocido'
+    setPullError(message)
+    console.warn('[pullFromServer] error:', message)
+  }
 }
 
-export function stopSyncListeners(): void {
-  unsubscribeNetInfo?.()
-  appStateListener?.remove()
-  unsubscribeNetInfo = null
-  appStateListener = null
-}

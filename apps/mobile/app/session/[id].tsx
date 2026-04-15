@@ -117,7 +117,7 @@ export default function SessionDetailScreen() {
           })}
         </Text>
         <Text style={styles.typeText}>
-          {session.activityType === 'run' ? '🏃 Carrera' : '🚶 Caminata'}
+          {session.activityType === 'run' ? '🏃 Carrera' : session.activityType === 'bike' ? '🚴 Ciclismo' : '🚶 Caminata'}
         </Text>
 
         <View style={styles.statsRow}>
