@@ -11,7 +11,7 @@ import {
 } from 'react-native'
 import { supabase } from '../../src/lib/supabase'
 import { useUIStore } from '../../src/store/uiStore'
-import { syncDatabase } from '../../src/services/database/sync'
+import { syncDatabase, pullFromServer } from '../../src/services/database/sync'
 import type { User } from '@supabase/supabase-js'
 
 export default function ProfileScreen() {
@@ -21,7 +21,7 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(false)
   const [isSignUp, setIsSignUp] = useState(false)
 
-  const { isSyncing, lastSyncedAt, syncError } = useUIStore()
+  const { isSyncing, lastSyncedAt, syncError, isPulling, pullError, pullUpdatedCount } = useUIStore()
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data.user))
@@ -94,7 +94,41 @@ export default function ProfileScreen() {
           >
             {isSyncing
               ? <ActivityIndicator size="small" color="#fff" />
-              : <Text style={styles.syncBtnLabel}>Reintentar sincronización</Text>
+              : <Text style={styles.syncBtnLabel}>Sincronizar</Text>
+            }
+          </TouchableOpacity>
+        </View>
+
+        {/* Pull from server panel */}
+        <View style={styles.syncCard}>
+          <Text style={styles.syncTitle}>Actualizar desde servidor</Text>
+          <Text style={styles.pullDescription}>
+            Trae los cambios que hayas hecho desde la web (tipo de actividad, notas, duración) hacia este dispositivo. No importa sesiones nuevas.
+          </Text>
+
+          {pullError ? (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorBoxLabel}>Error:</Text>
+              <Text style={styles.errorBoxText} selectable>{pullError}</Text>
+            </View>
+          ) : pullUpdatedCount !== null ? (
+            <View style={styles.pullResultBox}>
+              <Text style={styles.pullResultText}>
+                {pullUpdatedCount === 0
+                  ? 'Todo al día, sin cambios.'
+                  : `${pullUpdatedCount} sesión${pullUpdatedCount !== 1 ? 'es' : ''} actualizada${pullUpdatedCount !== 1 ? 's' : ''}.`}
+              </Text>
+            </View>
+          ) : null}
+
+          <TouchableOpacity
+            style={[styles.pullBtn, (isPulling || isSyncing) && styles.syncBtnDisabled]}
+            onPress={pullFromServer}
+            disabled={isPulling || isSyncing}
+          >
+            {isPulling
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Text style={styles.syncBtnLabel}>Actualizar desde servidor</Text>
             }
           </TouchableOpacity>
         </View>
@@ -184,6 +218,22 @@ const styles = StyleSheet.create({
   },
   syncBtnDisabled: { opacity: 0.5 },
   syncBtnLabel: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  pullDescription: { color: '#94a3b8', fontSize: 12, lineHeight: 18 },
+  pullBtn: {
+    backgroundColor: '#7c3aed',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  pullResultBox: {
+    backgroundColor: '#0f2a1a',
+    borderRadius: 8,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#166534',
+  },
+  pullResultText: { color: '#86efac', fontSize: 13 },
   signOutBtn: {
     backgroundColor: '#1e293b',
     borderRadius: 12,

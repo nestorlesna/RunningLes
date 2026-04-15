@@ -54,11 +54,17 @@ export default function DashboardPage() {
   const [sessions, setSessions] = useState<Session[]>([])
   const [stats, setStats] = useState<UserStats | null>(null)
   const [loading, setLoading] = useState(true)
+  const [sessionsLoading, setSessionsLoading] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [userEmail, setUserEmail] = useState<string>('')
+  const [token, setToken] = useState<string>('')
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const LIMIT = 20
+  const totalPages = Math.max(1, Math.ceil(total / LIMIT))
 
   useEffect(() => {
-    async function load() {
+    async function loadInitial() {
       const { data: { session } } = await supabaseBrowser.auth.getSession()
       if (!session) {
         router.push('/login')
@@ -66,16 +72,17 @@ export default function DashboardPage() {
       }
 
       setUserEmail(session.user.email ?? '')
-      const token = session.access_token
+      setToken(session.access_token)
 
       const [sessRes, statsRes] = await Promise.all([
-        fetch('/api/sessions?limit=50', { headers: { Authorization: `Bearer ${token}` } }),
-        fetch('/api/stats', { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`/api/sessions?limit=${LIMIT}&page=1`, { headers: { Authorization: `Bearer ${session.access_token}` } }),
+        fetch('/api/stats', { headers: { Authorization: `Bearer ${session.access_token}` } }),
       ])
 
       if (sessRes.ok) {
         const json = await sessRes.json()
         setSessions(json.sessions)
+        setTotal(json.total)
       }
       if (statsRes.ok) {
         setStats(await statsRes.json())
@@ -84,23 +91,38 @@ export default function DashboardPage() {
       setLoading(false)
     }
 
-    load()
+    loadInitial()
   }, [router])
+
+  useEffect(() => {
+    if (!token || page === 1) return
+    async function loadPage() {
+      setSessionsLoading(true)
+      const res = await fetch(`/api/sessions?limit=${LIMIT}&page=${page}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.ok) {
+        const json = await res.json()
+        setSessions(json.sessions)
+        setTotal(json.total)
+      }
+      setSessionsLoading(false)
+    }
+    loadPage()
+  }, [page, token])
 
   async function handleDelete(id: string) {
     if (!confirm('¿Eliminar esta sesión?')) return
     setDeletingId(id)
 
-    const { data: { session } } = await supabaseBrowser.auth.getSession()
-    if (!session) return
-
     const res = await fetch(`/api/sessions/${id}`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${session.access_token}` },
+      headers: { Authorization: `Bearer ${token}` },
     })
 
     if (res.ok) {
       setSessions((prev) => prev.filter((s) => s.id !== id))
+      setTotal((t) => t - 1)
     }
     setDeletingId(null)
   }
@@ -147,10 +169,10 @@ export default function DashboardPage() {
       {/* Sessions list */}
       <h2 className="text-lg font-semibold mb-4">Historial</h2>
 
-      {sessions.length === 0 ? (
+      {sessions.length === 0 && !sessionsLoading ? (
         <p className="text-gray-500 text-sm">No hay sesiones todavía.</p>
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className={`flex flex-col gap-3 transition-opacity duration-150 ${sessionsLoading ? 'opacity-50 pointer-events-none' : ''}`}>
           {sessions.map((s) => (
             <div
               key={s.id}
@@ -179,6 +201,31 @@ export default function DashboardPage() {
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between mt-6">
+          <span className="text-xs text-gray-500">
+            Página {page} de {totalPages} · {total} sesiones
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage((p) => p - 1)}
+              disabled={page === 1 || sessionsLoading}
+              className="text-sm px-3 py-1.5 rounded-lg border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            >
+              ← Anterior
+            </button>
+            <button
+              onClick={() => setPage((p) => p + 1)}
+              disabled={page === totalPages || sessionsLoading}
+              className="text-sm px-3 py-1.5 rounded-lg border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            >
+              Siguiente →
+            </button>
+          </div>
         </div>
       )}
     </div>

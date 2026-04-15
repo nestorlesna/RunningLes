@@ -57,8 +57,8 @@ function MapViewInner({ points, isActive }: Props) {
         longitudeDelta: 0.01,
       }
     : {
-        latitude: -34.6037,
-        longitude: -58.3816,
+        latitude: -34.9011,
+        longitude: -56.1645,
         latitudeDelta: 0.05,
         longitudeDelta: 0.05,
       }

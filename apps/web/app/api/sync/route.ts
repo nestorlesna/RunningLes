@@ -23,6 +23,10 @@ export async function POST(req: NextRequest) {
     await pushSessions(user.id, changes.sessions)
     await pushGpsPoints(user.id, changes.gps_points)
 
+    // ---- RECONCILE: correct duration if the stored value drifted >10% from wall time ----
+    const pushedSessions = [...changes.sessions.created, ...changes.sessions.updated]
+    await reconcileSessionDurations(pushedSessions)
+
     // ---- PULL: fetch server changes since lastPulledAt ----
     const serverChanges = await pullChanges(user.id, lastPulledAt)
 
@@ -135,6 +139,73 @@ async function pushGpsPoints(
       .delete()
       .in('id', changes.deleted)
     if (error) throw new Error(`gps_points delete failed: ${error.message}`)
+  }
+}
+
+// ---------------------------------------------------------------------------
+
+/**
+ * After both sessions and GPS points are pushed, verify each session's
+ * duration_seconds against real timestamps.
+ *
+ * Logic:
+ *  1. Compute wall duration = ended_at - started_at (seconds).
+ *  2. If |stored - wall| / wall <= 10% → keep the stored value (it's accurate enough).
+ *  3. Otherwise → use the actual GPS span: last recorded_at - first recorded_at.
+ *     This handles cases where the app was backgrounded and the JS interval drifted.
+ */
+async function reconcileSessionDurations(
+  sessions: Record<string, unknown>[],
+) {
+  const candidates = sessions.filter(
+    (s) => s.ended_at != null && s.started_at != null && s.duration_seconds != null,
+  )
+  if (candidates.length === 0) return
+
+  for (const s of candidates) {
+    const sessionId = s.id as string
+    const startedAt = new Date(s.started_at as number)
+    const endedAt = new Date(s.ended_at as number)
+    const storedDuration = s.duration_seconds as number
+
+    const wallDuration = (endedAt.getTime() - startedAt.getTime()) / 1000
+    if (wallDuration <= 0) continue
+
+    const drift = Math.abs(storedDuration - wallDuration) / wallDuration
+    if (drift <= 0.1) continue // within 10% — nothing to fix
+
+    // Drift exceeds threshold: compute duration from actual GPS point timestamps
+    const [firstResult, lastResult] = await Promise.all([
+      supabase
+        .from('gps_points')
+        .select('recorded_at')
+        .eq('session_id', sessionId)
+        .order('recorded_at', { ascending: true })
+        .limit(1),
+      supabase
+        .from('gps_points')
+        .select('recorded_at')
+        .eq('session_id', sessionId)
+        .order('recorded_at', { ascending: false })
+        .limit(1),
+    ])
+
+    const firstPoint = firstResult.data?.[0]
+    const lastPoint = lastResult.data?.[0]
+
+    if (!firstPoint || !lastPoint) continue
+
+    const gpsDuration = Math.round(
+      (new Date(lastPoint.recorded_at as string).getTime() -
+        new Date(firstPoint.recorded_at as string).getTime()) /
+        1000,
+    )
+    if (gpsDuration <= 0) continue
+
+    await supabase
+      .from('sessions')
+      .update({ duration_seconds: gpsDuration })
+      .eq('id', sessionId)
   }
 }
 

@@ -1,4 +1,4 @@
-export type ActivityType = 'run' | 'walk'
+export type ActivityType = 'run' | 'walk' | 'bike'
 
 export interface GpsCoordinate {
   latitude: number

@@ -214,7 +214,15 @@ Responder:
 # Desde la raíz del monorepo
 git add .
 git commit -m "feat: descripción del cambio"
-git push
+git push origin develop
+
+# Merge a main
+git checkout main
+git merge develop
+git push origin main
+git checkout develop
+
+# Deploy
 vercel deploy --prod
 ```
 
@@ -318,18 +326,38 @@ La app tiene `expo-updates` integrado. Cuando hay cambios **solo en JS/TS** (pan
 | Cambio en `app.config.ts` (permisos, plugins) | `eas build` — nuevo APK |
 | Cambio en backend | `vercel deploy --prod` |
 
-### Publicar un update OTA
+### Publicar un update OTA (solo JS/TS)
 
 ```bash
+# Desde la raíz del monorepo
+git add .
+git commit -m "feat: descripción del cambio"
+git push origin develop
+
+git checkout main
+git merge develop
+git push origin main
+git checkout develop
+
 cd apps/mobile
-eas update --branch production --message "fix: descripción del cambio"
+eas update --branch production --message "descripción del cambio"
 ```
 
 Los usuarios reciben el update la próxima vez que abren la app (en background, sin interrupciones).
 
-### Forzar un nuevo APK (cambios nativos)
+### Nuevo APK (cambios nativos)
 
 ```bash
+# Desde la raíz del monorepo
+git add .
+git commit -m "feat: descripción del cambio"
+git push origin develop
+
+git checkout main
+git merge develop
+git push origin main
+git checkout develop
+
 cd apps/mobile
 eas build --platform android --profile production --non-interactive
 # Al terminar: link directo al APK para descargar e instalar
@@ -339,21 +367,44 @@ eas build --platform android --profile production --non-interactive
 
 ## Proceso completo para una nueva versión
 
-```
-1. Cambiar código
-      ↓
-2. git commit + git push
-      ↓
-3. ¿Cambios en el backend (apps/web)?
-   → vercel deploy --prod
-      ↓
-4. ¿Cambios en la app?
-   → Solo JS/TS:
-      eas update --branch production --message "descripción"
-      (usuarios lo reciben automáticamente)
-   → Dependencias nativas / app.config.ts:
-      eas build --platform android --profile production --non-interactive
-      (descargar e instalar el nuevo APK)
+| Qué cambió | Comando de deploy |
+|---|---|
+| `apps/web/` (backend) | `vercel deploy --prod` |
+| JS/TS en la app | `eas update --branch production --message "..."` |
+| Deps nativas / `app.config.ts` | `eas build --platform android --profile production --non-interactive` |
+
+---
+
+## Deploy completo (git + producción)
+
+Secuencia completa desde commit hasta producción:
+
+```bash
+# 1. Staging y commit
+git add .
+git commit -m "feat: descripción del cambio"
+
+# 2. Push a develop
+git push origin develop
+
+# 3. Merge a main
+git checkout main
+git merge develop
+git push origin main
+
+# 4. Volver a develop
+git checkout develop
+
+# 5. Deploy backend (si hay cambios en apps/web)
+vercel deploy --prod
+
+# 6a. Deploy app — solo cambios JS/TS (rápido, sin nuevo APK)
+cd apps/mobile
+eas update --branch production --message "descripción del cambio"
+
+# 6b. Deploy app — cambios nativos (nuevo APK, ~20-30 min)
+cd apps/mobile
+eas build --platform android --profile production --non-interactive
 ```
 
 ---

@@ -32,13 +32,21 @@ export function SessionCard({ session, onPress }: Props) {
     ? formatPace(session.avgPaceSecPerKm > 0 ? 1000 / session.avgPaceSecPerKm : 0)
     : '–:– /km'
 
-  const isRun = session.activityType === 'run'
+  const activityLabel =
+    session.activityType === 'run' ? '🏃 Carrera' :
+    session.activityType === 'bike' ? '🚴 Ciclismo' :
+    '🚶 Caminata'
+
+  const badgeStyle =
+    session.activityType === 'run' ? styles.badgeRun :
+    session.activityType === 'bike' ? styles.badgeBike :
+    styles.badgeWalk
 
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.75}>
       <View style={styles.header}>
-        <View style={[styles.badge, isRun ? styles.badgeRun : styles.badgeWalk]}>
-          <Text style={styles.badgeText}>{isRun ? '🏃 Carrera' : '🚶 Caminata'}</Text>
+        <View style={[styles.badge, badgeStyle]}>
+          <Text style={styles.badgeText}>{activityLabel}</Text>
         </View>
         <Text style={styles.dateText}>
           {dateStr} · {timeStr}
@@ -84,6 +92,7 @@ const styles = StyleSheet.create({
   },
   badgeRun: { backgroundColor: '#166534' },
   badgeWalk: { backgroundColor: '#1e3a5f' },
+  badgeBike: { backgroundColor: '#4a1d96' },
   badgeText: { color: '#d1fae5', fontSize: 12, fontWeight: '600' },
   dateText: { color: '#64748b', fontSize: 12 },
   statsRow: {

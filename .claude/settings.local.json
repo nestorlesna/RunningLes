@@ -17,7 +17,8 @@
       "Bash(xargs cat:*)",
       "Bash(pnpm build:*)",
       "Bash(pnpm typecheck:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(pnpm add *)"
     ]
   }
 }

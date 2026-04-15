@@ -69,7 +69,6 @@ export async function stopTracking(): Promise<void> {
   // 2. Finalize session in WatermelonDB
   const {
     sessionId,
-    elapsedSeconds,
     totalDistanceMeters,
     currentSpeedMps,
     currentPoints,
@@ -77,6 +76,10 @@ export async function stopTracking(): Promise<void> {
 
   const sessionCollection = database.get<Session>('sessions')
   const session = await sessionCollection.find(sessionId!)
+
+  // Calculate duration from real wall-clock timestamps instead of JS interval ticks,
+  // which can drift or pause when the app is backgrounded or the HUD unmounts.
+  const durationSeconds = Math.round((Date.now() - session.startedAt.getTime()) / 1000)
 
   const speeds = currentPoints
     .map((p) => p.speedMps)
@@ -87,7 +90,7 @@ export async function stopTracking(): Promise<void> {
   const avgPaceSecPerKm = avgSpeedMps > 0 ? 1000 / avgSpeedMps : null
 
   await session.finalize(
-    elapsedSeconds,
+    durationSeconds,
     totalDistanceMeters,
     avgPaceSecPerKm ?? 0,
     maxSpeedMps,

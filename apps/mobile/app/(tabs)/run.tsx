@@ -5,12 +5,14 @@ import { RunMap } from '../../src/components/map/RunMap'
 import { ActiveSessionHUD } from '../../src/components/session/ActiveSessionHUD'
 import { StartButton } from '../../src/components/session/StartButton'
 import { stopTracking } from '../../src/services/location/locationService'
+import { syncDatabase } from '../../src/services/database/sync'
 
 export default function RunScreen() {
   const { isRunning, currentPoints } = useSessionStore()
 
   async function handleStop() {
     await stopTracking()
+    syncDatabase()
   }
 
   return (
