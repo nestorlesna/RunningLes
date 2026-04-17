@@ -155,6 +155,7 @@ export default function SessionDetailPage() {
   const [editLng, setEditLng] = useState('')
   const [savingPoint, setSavingPoint] = useState(false)
   const [deletingPointId, setDeletingPointId] = useState<string | null>(null)
+  const [pointError, setPointError] = useState<string | null>(null)
 
   // GPS table collapse
   const [gpsExpanded, setGpsExpanded] = useState(false)
@@ -260,19 +261,36 @@ export default function SessionDetailPage() {
     setSaving(false)
   }
 
+  // ── Get a fresh token (refreshes if expired) ──
+  async function getFreshToken(): Promise<string> {
+    const { data: { session: s } } = await supabaseBrowser.auth.getSession()
+    return s?.access_token ?? token
+  }
+
   // ── Delete GPS point ──
   async function handleDeletePoint(pointId: string) {
     if (!confirm('¿Eliminar este punto GPS?')) return
+    setPointError(null)
     setDeletingPointId(pointId)
-    const res = await fetch(`/api/gps-points/${pointId}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    if (res.ok) {
-      setSession((s) =>
-        s ? { ...s, gpsPoints: s.gpsPoints.filter((p) => p.id !== pointId) } : s
-      )
-      setSelectedIndex(null)
+    const freshToken = await getFreshToken()
+    try {
+      const res = await fetch(`/api/gps-points/${pointId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${freshToken}` },
+      })
+      if (res.ok) {
+        setSession((s) =>
+          s ? { ...s, gpsPoints: s.gpsPoints.filter((p) => p.id !== pointId) } : s
+        )
+        setSelectedIndex(null)
+      } else {
+        const body = await res.json().catch(() => ({}))
+        setPointError(`Error al borrar (${res.status}): ${body?.error ?? 'Error desconocido'}`)
+        console.error('[DELETE gps-point]', res.status, body)
+      }
+    } catch (err) {
+      setPointError('Error de red al borrar el punto.')
+      console.error('[DELETE gps-point] fetch error', err)
     }
     setDeletingPointId(null)
   }
@@ -282,30 +300,41 @@ export default function SessionDetailPage() {
     const lat = parseFloat(editLat)
     const lng = parseFloat(editLng)
     if (isNaN(lat) || isNaN(lng)) return
+    setPointError(null)
     setSavingPoint(true)
-    const res = await fetch(`/api/gps-points/${pointId}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ latitude: lat, longitude: lng }),
-    })
-    if (res.ok) {
-      const updated = await res.json()
-      setSession((s) =>
-        s
-          ? {
-              ...s,
-              gpsPoints: s.gpsPoints.map((p) =>
-                p.id === pointId
-                  ? { ...p, latitude: updated.latitude, longitude: updated.longitude }
-                  : p
-              ),
-            }
-          : s
-      )
-      setEditingPointId(null)
+    const freshToken = await getFreshToken()
+    try {
+      const res = await fetch(`/api/gps-points/${pointId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${freshToken}`,
+        },
+        body: JSON.stringify({ latitude: lat, longitude: lng }),
+      })
+      if (res.ok) {
+        const updated = await res.json()
+        setSession((s) =>
+          s
+            ? {
+                ...s,
+                gpsPoints: s.gpsPoints.map((p) =>
+                  p.id === pointId
+                    ? { ...p, latitude: updated.latitude, longitude: updated.longitude }
+                    : p
+                ),
+              }
+            : s
+        )
+        setEditingPointId(null)
+      } else {
+        const body = await res.json().catch(() => ({}))
+        setPointError(`Error al guardar (${res.status}): ${body?.error ?? 'Error desconocido'}`)
+        console.error('[PATCH gps-point]', res.status, body)
+      }
+    } catch (err) {
+      setPointError('Error de red al guardar el punto.')
+      console.error('[PATCH gps-point] fetch error', err)
     }
     setSavingPoint(false)
   }
@@ -486,6 +515,12 @@ export default function SessionDetailPage() {
 
           {gpsExpanded && (
             <>
+              {pointError && (
+                <div className="mb-3 px-3 py-2 bg-red-950/60 border border-red-800 rounded-lg text-xs text-red-300 flex items-center justify-between gap-2">
+                  <span>{pointError}</span>
+                  <button onClick={() => setPointError(null)} className="text-red-400 hover:text-red-200 font-bold leading-none">✕</button>
+                </div>
+              )}
               <div className="flex items-center justify-end gap-3 text-xs text-gray-500 mb-3">
                 <span className="flex items-center gap-1">
                   <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500" />
