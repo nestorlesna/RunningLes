@@ -33,6 +33,7 @@ interface SessionDetail {
   max_speed_mps: number | null
   avg_speed_mps: number | null
   elevation_gain_meters: number | null
+  calories_burned: number | null
   activity_type: string
   notes: string | null
   gpsPoints: GpsPoint[]
@@ -159,6 +160,11 @@ export default function SessionDetailPage() {
 
   // GPS table collapse
   const [gpsExpanded, setGpsExpanded] = useState(false)
+
+  // Bulk range delete
+  const [rangeFrom, setRangeFrom] = useState('')
+  const [rangeTo, setRangeTo] = useState('')
+  const [deletingRange, setDeletingRange] = useState(false)
 
   // Chart collapse states
   const [speedExpanded, setSpeedExpanded] = useState(false)
@@ -339,6 +345,56 @@ export default function SessionDetailPage() {
     setSavingPoint(false)
   }
 
+  // ── Bulk range delete ──
+  async function handleDeleteRange() {
+    if (!session) return
+    const total = session.gpsPoints.length
+    const from = parseInt(rangeFrom, 10)
+    const to = parseInt(rangeTo, 10)
+
+    if (isNaN(from) || isNaN(to) || from < 1 || to > total || from > to) {
+      setPointError(`Rango inválido. Ingresá valores entre 1 y ${total}.`)
+      return
+    }
+
+    const count = to - from + 1
+    if (!confirm(`¿Eliminar ${count} punto${count !== 1 ? 's' : ''} GPS (del #${from} al #${to})?`)) return
+
+    setPointError(null)
+    setDeletingRange(true)
+
+    const ids = session.gpsPoints.slice(from - 1, to).map((p) => p.id)
+    const freshToken = await getFreshToken()
+
+    try {
+      const res = await fetch('/api/gps-points/bulk', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${freshToken}`,
+        },
+        body: JSON.stringify({ ids }),
+      })
+
+      if (res.ok) {
+        const idsSet = new Set(ids)
+        setSession((s) =>
+          s ? { ...s, gpsPoints: s.gpsPoints.filter((p) => !idsSet.has(p.id)) } : s
+        )
+        setSelectedIndex(null)
+        setRangeFrom('')
+        setRangeTo('')
+      } else {
+        const body = await res.json().catch(() => ({}))
+        setPointError(`Error al borrar rango (${res.status}): ${body?.error ?? 'Error desconocido'}`)
+      }
+    } catch {
+      setPointError('Error de red al borrar el rango.')
+    }
+
+    setDeletingRange(false)
+  }
+
   // ── Select point from map → scroll table ──
   function handleMapSelect(index: number) {
     setSelectedIndex(index)
@@ -469,6 +525,9 @@ export default function SessionDetailPage() {
         <StatCard label="Vel. promedio" value={formatSpeed(session.avg_speed_mps)} />
         <StatCard label="Vel. máxima" value={formatSpeed(session.max_speed_mps)} />
         <StatCard label="Puntos GPS" value={String(session.gpsPoints.length)} />
+        {session.calories_burned != null && (
+          <StatCard label="Calorías" value={`${session.calories_burned} kcal`} highlight />
+        )}
       </div>
 
       {/* ── Map ── */}
@@ -530,6 +589,43 @@ export default function SessionDetailPage() {
                   <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500" />
                   Anomalía ({anomalyCount})
                 </span>
+              </div>
+
+              {/* Bulk range delete */}
+              <div className="flex items-center gap-2 mb-3 p-3 bg-gray-900 border border-gray-800 rounded-xl">
+                <span className="text-xs text-gray-400 whitespace-nowrap">Borrar rango:</span>
+                <span className="text-xs text-gray-500">#</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={session.gpsPoints.length}
+                  value={rangeFrom}
+                  onChange={(e) => setRangeFrom(e.target.value)}
+                  placeholder="Desde"
+                  className="w-20 bg-gray-800 border border-gray-700 text-white text-xs rounded px-2 py-1.5 focus:outline-none focus:border-red-500"
+                />
+                <span className="text-xs text-gray-500">→ #</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={session.gpsPoints.length}
+                  value={rangeTo}
+                  onChange={(e) => setRangeTo(e.target.value)}
+                  placeholder="Hasta"
+                  className="w-20 bg-gray-800 border border-gray-700 text-white text-xs rounded px-2 py-1.5 focus:outline-none focus:border-red-500"
+                />
+                {rangeFrom && rangeTo && !isNaN(parseInt(rangeFrom)) && !isNaN(parseInt(rangeTo)) && parseInt(rangeFrom) <= parseInt(rangeTo) && (
+                  <span className="text-xs text-gray-500">
+                    ({parseInt(rangeTo) - parseInt(rangeFrom) + 1} pts)
+                  </span>
+                )}
+                <button
+                  onClick={handleDeleteRange}
+                  disabled={deletingRange || !rangeFrom || !rangeTo}
+                  className="ml-auto text-xs bg-red-900/50 border border-red-800 text-red-300 hover:bg-red-800/60 hover:text-red-200 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-40"
+                >
+                  {deletingRange ? 'Borrando…' : 'Eliminar rango'}
+                </button>
               </div>
 
               <div className="overflow-x-auto rounded-xl border border-gray-800">
@@ -784,11 +880,11 @@ export default function SessionDetailPage() {
   )
 }
 
-function StatCard({ label, value }: { label: string; value: string }) {
+function StatCard({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
       <p className="text-xs text-gray-500 mb-1">{label}</p>
-      <p className="text-lg font-bold text-brand">{value}</p>
+      <p className={`text-lg font-bold ${highlight ? 'text-orange-400' : 'text-brand'}`}>{value}</p>
     </div>
   )
 }

@@ -3,6 +3,7 @@ import { database } from './index'
 import Session from './models/Session'
 import { supabase } from '../../lib/supabase'
 import { useUIStore } from '../../store/uiStore'
+import { useProfileStore } from '../../store/profileStore'
 
 const API_BASE_URL: string = process.env.EXPO_PUBLIC_API_BASE_URL ?? ''
 
@@ -63,7 +64,8 @@ export async function syncDatabase(): Promise<void> {
       pushChanges: async ({ changes, lastPulledAt }) => {
         // Strip local-only fields before sending: raw_points (huge JSON string),
         // synced flag, and WatermelonDB internal fields (_changed, _status).
-        const stripSession = ({ raw_points, synced, _changed, _status, ...s }: Record<string, unknown>) => s
+        const stripSession = ({ raw_points, synced, calories_burned, _changed, _status, ...s }: Record<string, unknown>) =>
+          ({ ...s, calories_burned: calories_burned ?? null })
         const stripPoint = ({ _changed, _status, ...p }: Record<string, unknown>) => p
         const sanitizedChanges = {
           sessions: {
@@ -98,10 +100,32 @@ export async function syncDatabase(): Promise<void> {
 
       migrationsEnabledAtVersion: 1,
     })
+
+    // After WatermelonDB sync, sync the user profile (separate endpoint)
+    await syncProfile(token)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Sync error'
     setSyncError(message)
     console.warn('[sync] error:', message)
+  }
+}
+
+async function syncProfile(token: string): Promise<void> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/profile`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) return
+    const data = await res.json()
+    if (data && typeof data === 'object') {
+      useProfileStore.getState().setProfile({
+        weightKg: data.weight_kg ?? null,
+        birthYear: data.birth_year ?? null,
+        sex: data.sex ?? null,
+      })
+    }
+  } catch {
+    // Non-critical: profile sync failure doesn't block session sync
   }
 }
 
@@ -118,6 +142,7 @@ interface ServerSession {
   avg_pace_sec_per_km: number | null
   max_speed_mps: number | null
   avg_speed_mps: number | null
+  calories_burned: number | null
 }
 
 export async function pullFromServer(): Promise<void> {
@@ -191,7 +216,8 @@ export async function pullFromServer(): Promise<void> {
           local.distanceMeters !== server.distance_meters ||
           local.avgPaceSecPerKm !== server.avg_pace_sec_per_km ||
           local.maxSpeedMps !== server.max_speed_mps ||
-          local.avgSpeedMps !== server.avg_speed_mps
+          local.avgSpeedMps !== server.avg_speed_mps ||
+          (local.caloriesBurned ?? null) !== (server.calories_burned ?? null)
 
         if (!changed) continue
 
@@ -203,6 +229,7 @@ export async function pullFromServer(): Promise<void> {
           record.avgPaceSecPerKm = server.avg_pace_sec_per_km
           record.maxSpeedMps = server.max_speed_mps
           record.avgSpeedMps = server.avg_speed_mps
+          record.caloriesBurned = server.calories_burned
         })
         updatedCount++
       }

@@ -69,6 +69,7 @@ async function pushSessions(
       elevation_gain_meters: (s.elevation_gain_meters as number) ?? null,
       activity_type: (s.activity_type as string) ?? 'run',
       notes: (s.notes as string) ?? null,
+      calories_burned: (s.calories_burned as number) ?? null,
       synced_at: new Date().toISOString(),
     }))
 
@@ -223,6 +224,7 @@ function sessionToWatermelonRaw(s: Record<string, unknown>) {
     max_speed_mps: s.max_speed_mps ?? null,
     avg_speed_mps: s.avg_speed_mps ?? null,
     elevation_gain_meters: s.elevation_gain_meters ?? null,
+    calories_burned: s.calories_burned ?? null,
     activity_type: (s.activity_type as string) ?? 'run',
     notes: s.notes ?? null,
     // 'synced', 'raw_points', 'user_id', 'synced_at', 'route' are local-only or server-only — omitted
@@ -250,7 +252,7 @@ async function pullChanges(userId: string, lastPulledAt: number | null) {
 
   const { data: sessions } = await supabase
     .from('sessions')
-    .select('id, local_id, started_at, ended_at, duration_seconds, distance_meters, avg_pace_sec_per_km, max_speed_mps, avg_speed_mps, elevation_gain_meters, activity_type, notes')
+    .select('id, local_id, started_at, ended_at, duration_seconds, distance_meters, avg_pace_sec_per_km, max_speed_mps, avg_speed_mps, elevation_gain_meters, calories_burned, activity_type, notes')
     .eq('user_id', userId)
     .gt('synced_at', since)
 
