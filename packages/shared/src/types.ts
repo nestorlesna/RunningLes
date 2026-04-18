@@ -1,5 +1,11 @@
 export type ActivityType = 'run' | 'walk' | 'bike'
 
+export interface UserProfile {
+  weightKg: number | null
+  birthYear: number | null
+  sex: 'male' | 'female' | null
+}
+
 export interface GpsCoordinate {
   latitude: number
   longitude: number
@@ -22,6 +28,7 @@ export interface Session {
   maxSpeedMps: number | null
   avgSpeedMps: number | null
   elevationGainMeters: number | null
+  caloriesBurned: number | null
   activityType: ActivityType
   notes: string | null
   syncedAt: string | null

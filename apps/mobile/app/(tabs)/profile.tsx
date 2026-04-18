@@ -11,8 +11,11 @@ import {
 } from 'react-native'
 import { supabase } from '../../src/lib/supabase'
 import { useUIStore } from '../../src/store/uiStore'
+import { useProfileStore } from '../../src/store/profileStore'
 import { syncDatabase, pullFromServer } from '../../src/services/database/sync'
 import type { User } from '@supabase/supabase-js'
+
+const API_BASE_URL: string = process.env.EXPO_PUBLIC_API_BASE_URL ?? ''
 
 export default function ProfileScreen() {
   const [user, setUser] = useState<User | null>(null)
@@ -22,15 +25,29 @@ export default function ProfileScreen() {
   const [isSignUp, setIsSignUp] = useState(false)
 
   const { isSyncing, lastSyncedAt, syncError, isPulling, pullError, pullUpdatedCount } = useUIStore()
+  const { weightKg, birthYear, sex, setProfile } = useProfileStore()
+
+  // Profile form local state
+  const [editWeight, setEditWeight] = useState('')
+  const [editBirthYear, setEditBirthYear] = useState('')
+  const [editSex, setEditSex] = useState<'male' | 'female' | null>(null)
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [profileSaved, setProfileSaved] = useState(false)
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data.user))
-
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
     })
     return () => listener.subscription.unsubscribe()
   }, [])
+
+  // Sync local form state with store values
+  useEffect(() => {
+    setEditWeight(weightKg != null ? String(weightKg) : '')
+    setEditBirthYear(birthYear != null ? String(birthYear) : '')
+    setEditSex(sex)
+  }, [weightKg, birthYear, sex])
 
   async function handleAuth() {
     setLoading(true)
@@ -38,7 +55,6 @@ export default function ProfileScreen() {
       const { error } = isSignUp
         ? await supabase.auth.signUp({ email, password })
         : await supabase.auth.signInWithPassword({ email, password })
-
       if (error) Alert.alert('Error', error.message)
     } finally {
       setLoading(false)
@@ -49,19 +65,131 @@ export default function ProfileScreen() {
     await supabase.auth.signOut()
   }
 
+  async function handleSaveProfile() {
+    const w = parseFloat(editWeight)
+    const by = parseInt(editBirthYear, 10)
+
+    if (editWeight && (isNaN(w) || w < 20 || w > 300)) {
+      Alert.alert('Peso inválido', 'Ingresá un peso entre 20 y 300 kg.')
+      return
+    }
+    if (editBirthYear && (isNaN(by) || by < 1920 || by > new Date().getFullYear() - 5)) {
+      Alert.alert('Año inválido', 'Ingresá un año de nacimiento válido.')
+      return
+    }
+
+    const newProfile = {
+      weightKg: editWeight ? w : null,
+      birthYear: editBirthYear ? by : null,
+      sex: editSex,
+    }
+
+    setProfile(newProfile)
+    setSavingProfile(true)
+
+    try {
+      const { data: { session: authSession } } = await supabase.auth.getSession()
+      if (authSession && API_BASE_URL) {
+        await fetch(`${API_BASE_URL}/api/profile`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authSession.access_token}`,
+          },
+          body: JSON.stringify({
+            weight_kg: newProfile.weightKg,
+            birth_year: newProfile.birthYear,
+            sex: newProfile.sex,
+          }),
+        })
+      }
+      setProfileSaved(true)
+      setTimeout(() => setProfileSaved(false), 2500)
+    } catch {
+      // Local save succeeded even if server sync fails
+    } finally {
+      setSavingProfile(false)
+    }
+  }
+
   function formatSyncTime(ts: number | null) {
     if (!ts) return 'Nunca'
-    const d = new Date(ts)
-    return d.toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'medium' })
+    return new Date(ts).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'medium' })
   }
 
   if (user) {
     return (
       <ScrollView style={styles.root} contentContainerStyle={styles.content}>
         <Text style={styles.title}>Perfil</Text>
+
         <View style={styles.card}>
           <Text style={styles.email}>{user.email}</Text>
           <Text style={styles.uid}>ID: {user.id.slice(0, 8)}…</Text>
+        </View>
+
+        {/* Physical profile */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Datos físicos</Text>
+          <Text style={styles.sectionDesc}>
+            Se usan para calcular las calorías de cada sesión.
+          </Text>
+
+          <Text style={styles.fieldLabel}>Peso (kg)</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Ej: 72"
+            placeholderTextColor="#475569"
+            value={editWeight}
+            onChangeText={setEditWeight}
+            keyboardType="decimal-pad"
+          />
+
+          <Text style={styles.fieldLabel}>Año de nacimiento</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Ej: 1990"
+            placeholderTextColor="#475569"
+            value={editBirthYear}
+            onChangeText={setEditBirthYear}
+            keyboardType="number-pad"
+          />
+
+          <Text style={styles.fieldLabel}>Sexo biológico</Text>
+          <View style={styles.sexRow}>
+            <TouchableOpacity
+              style={[styles.sexBtn, editSex === 'male' && styles.sexBtnActive]}
+              onPress={() => setEditSex(editSex === 'male' ? null : 'male')}
+            >
+              <Text style={[styles.sexBtnLabel, editSex === 'male' && styles.sexBtnLabelActive]}>
+                Masculino
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.sexBtn, editSex === 'female' && styles.sexBtnActive]}
+              onPress={() => setEditSex(editSex === 'female' ? null : 'female')}
+            >
+              <Text style={[styles.sexBtnLabel, editSex === 'female' && styles.sexBtnLabelActive]}>
+                Femenino
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {profileSaved && (
+            <View style={styles.savedBox}>
+              <Text style={styles.savedText}>Perfil guardado</Text>
+            </View>
+          )}
+
+          <TouchableOpacity
+            style={[styles.saveBtn, savingProfile && styles.saveBtnDisabled]}
+            onPress={handleSaveProfile}
+            disabled={savingProfile}
+          >
+            {savingProfile
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Text style={styles.saveBtnLabel}>Guardar perfil</Text>
+            }
+          </TouchableOpacity>
         </View>
 
         {/* Sync panel */}
@@ -75,7 +203,11 @@ export default function ProfileScreen() {
 
           <View style={styles.syncRow}>
             <Text style={styles.syncLabel}>Estado:</Text>
-            <Text style={[styles.syncValue, isSyncing && styles.syncingText, syncError ? styles.errorText : !isSyncing && lastSyncedAt ? styles.okText : undefined]}>
+            <Text style={[
+              styles.syncValue,
+              isSyncing && styles.syncingText,
+              syncError ? styles.errorText : !isSyncing && lastSyncedAt ? styles.okText : undefined,
+            ]}>
               {isSyncing ? 'Sincronizando…' : syncError ? 'Error' : lastSyncedAt ? 'OK' : 'Pendiente'}
             </Text>
           </View>
@@ -103,7 +235,7 @@ export default function ProfileScreen() {
         <View style={styles.syncCard}>
           <Text style={styles.syncTitle}>Actualizar desde servidor</Text>
           <Text style={styles.pullDescription}>
-            Trae los cambios que hayas hecho desde la web (tipo de actividad, notas, duración) hacia este dispositivo. No importa sesiones nuevas.
+            Trae los cambios que hayas hecho desde la web (tipo de actividad, notas, duración) hacia este dispositivo.
           </Text>
 
           {pullError ? (
@@ -141,7 +273,7 @@ export default function ProfileScreen() {
   }
 
   return (
-    <View style={[styles.root, styles.content]}>
+    <View style={[styles.root, styles.loginContent]}>
       <Text style={styles.title}>{isSignUp ? 'Crear cuenta' : 'Iniciar sesión'}</Text>
 
       <View style={styles.form}>
@@ -186,10 +318,57 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#0f172a' },
   content: { padding: 20, paddingTop: 56, gap: 16 },
+  loginContent: { padding: 20, paddingTop: 56, gap: 16 },
   title: { color: '#f8fafc', fontSize: 26, fontWeight: '800', marginBottom: 8 },
   card: { backgroundColor: '#1e293b', borderRadius: 14, padding: 16, gap: 6 },
   email: { color: '#f1f5f9', fontSize: 16, fontWeight: '600' },
   uid: { color: '#64748b', fontSize: 12 },
+  // Physical profile section
+  section: { backgroundColor: '#1e293b', borderRadius: 14, padding: 16, gap: 10 },
+  sectionTitle: { color: '#f1f5f9', fontSize: 15, fontWeight: '700' },
+  sectionDesc: { color: '#64748b', fontSize: 12, lineHeight: 18 },
+  fieldLabel: { color: '#94a3b8', fontSize: 12, fontWeight: '600', marginTop: 4 },
+  input: {
+    backgroundColor: '#0f172a',
+    color: '#f1f5f9',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    fontSize: 15,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  sexRow: { flexDirection: 'row', gap: 10 },
+  sexBtn: {
+    flex: 1,
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  sexBtnActive: { borderColor: '#22c55e', backgroundColor: '#052e16' },
+  sexBtnLabel: { color: '#64748b', fontWeight: '600', fontSize: 14 },
+  sexBtnLabelActive: { color: '#22c55e' },
+  savedBox: {
+    backgroundColor: '#052e16',
+    borderRadius: 8,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#166534',
+    alignItems: 'center',
+  },
+  savedText: { color: '#86efac', fontSize: 13, fontWeight: '600' },
+  saveBtn: {
+    backgroundColor: '#22c55e',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  saveBtnDisabled: { opacity: 0.5 },
+  saveBtnLabel: { color: '#fff', fontWeight: '700', fontSize: 14 },
   // Sync panel
   syncCard: { backgroundColor: '#1e293b', borderRadius: 14, padding: 16, gap: 12 },
   syncTitle: { color: '#f1f5f9', fontSize: 15, fontWeight: '700', marginBottom: 2 },
@@ -242,14 +421,6 @@ const styles = StyleSheet.create({
   },
   signOutLabel: { color: '#f87171', fontWeight: '600' },
   form: { gap: 14 },
-  input: {
-    backgroundColor: '#1e293b',
-    color: '#f1f5f9',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-  },
   authBtn: {
     backgroundColor: '#22c55e',
     borderRadius: 12,

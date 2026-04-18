@@ -18,6 +18,7 @@ export default class Session extends Model {
   @field('max_speed_mps') maxSpeedMps!: number | null
   @field('avg_speed_mps') avgSpeedMps!: number | null
   @field('elevation_gain_meters') elevationGainMeters!: number | null
+  @field('calories_burned') caloriesBurned!: number | null
   @text('activity_type') activityType!: ActivityType
   @text('notes') notes!: string | null
   @field('synced') synced!: boolean
@@ -31,6 +32,8 @@ export default class Session extends Model {
     avgPaceSecPerKm: number,
     maxSpeedMps: number,
     avgSpeedMps: number,
+    caloriesBurned: number | null = null,
+    elevationGainMeters: number | null = null,
   ) {
     await this.update((record) => {
       record.endedAt = new Date()
@@ -39,6 +42,8 @@ export default class Session extends Model {
       record.avgPaceSecPerKm = avgPaceSecPerKm
       record.maxSpeedMps = maxSpeedMps
       record.avgSpeedMps = avgSpeedMps
+      record.caloriesBurned = caloriesBurned
+      if (elevationGainMeters != null) record.elevationGainMeters = elevationGainMeters
     })
   }
 }

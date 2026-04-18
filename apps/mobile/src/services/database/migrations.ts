@@ -1,7 +1,17 @@
-import { schemaMigrations } from '@nozbe/watermelondb/Schema/migrations'
+import { schemaMigrations, addColumns } from '@nozbe/watermelondb/Schema/migrations'
 
 export const migrations = schemaMigrations({
   migrations: [
-    // version 1 is the initial schema — no migration steps needed
+    {
+      toVersion: 2,
+      steps: [
+        addColumns({
+          table: 'sessions',
+          columns: [
+            { name: 'calories_burned', type: 'number', isOptional: true },
+          ],
+        }),
+      ],
+    },
   ],
 })

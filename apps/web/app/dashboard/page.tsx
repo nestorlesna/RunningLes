@@ -13,7 +13,14 @@ interface Session {
   duration_seconds: number | null
   distance_meters: number | null
   avg_pace_sec_per_km: number | null
+  calories_burned: number | null
   activity_type: string
+}
+
+interface UserProfile {
+  weight_kg: number | null
+  birth_year: number | null
+  sex: 'male' | 'female' | null
 }
 
 function formatDistance(meters: number | null) {
@@ -52,7 +59,7 @@ function formatDate(iso: string) {
 export default function DashboardPage() {
   const router = useRouter()
   const [sessions, setSessions] = useState<Session[]>([])
-  const [stats, setStats] = useState<UserStats | null>(null)
+  const [stats, setStats] = useState<(UserStats & { totalCaloriesBurned?: number }) | null>(null)
   const [loading, setLoading] = useState(true)
   const [sessionsLoading, setSessionsLoading] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -62,6 +69,15 @@ export default function DashboardPage() {
   const [total, setTotal] = useState(0)
   const LIMIT = 20
   const totalPages = Math.max(1, Math.ceil(total / LIMIT))
+
+  // Profile state
+  const [profile, setProfile] = useState<UserProfile>({ weight_kg: null, birth_year: null, sex: null })
+  const [profileWeight, setProfileWeight] = useState('')
+  const [profileBirthYear, setProfileBirthYear] = useState('')
+  const [profileSex, setProfileSex] = useState<'male' | 'female' | null>(null)
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [profileMsg, setProfileMsg] = useState('')
+  const [showProfile, setShowProfile] = useState(false)
 
   useEffect(() => {
     async function loadInitial() {
@@ -74,9 +90,10 @@ export default function DashboardPage() {
       setUserEmail(session.user.email ?? '')
       setToken(session.access_token)
 
-      const [sessRes, statsRes] = await Promise.all([
+      const [sessRes, statsRes, profileRes] = await Promise.all([
         fetch(`/api/sessions?limit=${LIMIT}&page=1`, { headers: { Authorization: `Bearer ${session.access_token}` } }),
         fetch('/api/stats', { headers: { Authorization: `Bearer ${session.access_token}` } }),
+        fetch('/api/profile', { headers: { Authorization: `Bearer ${session.access_token}` } }),
       ])
 
       if (sessRes.ok) {
@@ -86,6 +103,13 @@ export default function DashboardPage() {
       }
       if (statsRes.ok) {
         setStats(await statsRes.json())
+      }
+      if (profileRes.ok) {
+        const p: UserProfile = await profileRes.json()
+        setProfile(p)
+        setProfileWeight(p.weight_kg != null ? String(p.weight_kg) : '')
+        setProfileBirthYear(p.birth_year != null ? String(p.birth_year) : '')
+        setProfileSex(p.sex)
       }
 
       setLoading(false)
@@ -132,6 +156,40 @@ export default function DashboardPage() {
     router.push('/login')
   }
 
+  async function handleSaveProfile() {
+    const w = parseFloat(profileWeight)
+    const by = parseInt(profileBirthYear, 10)
+    if (profileWeight && (isNaN(w) || w < 20 || w > 300)) {
+      setProfileMsg('Peso inválido (20–300 kg)')
+      return
+    }
+    if (profileBirthYear && (isNaN(by) || by < 1920 || by > new Date().getFullYear() - 5)) {
+      setProfileMsg('Año de nacimiento inválido')
+      return
+    }
+
+    setSavingProfile(true)
+    setProfileMsg('')
+    const res = await fetch('/api/profile', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        weight_kg: profileWeight ? w : null,
+        birth_year: profileBirthYear ? by : null,
+        sex: profileSex,
+      }),
+    })
+    setSavingProfile(false)
+    if (res.ok) {
+      const updated: UserProfile = await res.json()
+      setProfile(updated)
+      setProfileMsg('Perfil guardado')
+      setTimeout(() => setProfileMsg(''), 2500)
+    } else {
+      setProfileMsg('Error al guardar')
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -158,13 +216,85 @@ export default function DashboardPage() {
 
       {/* Stats cards */}
       {stats && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-10">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
           <StatCard label="Sesiones" value={String(stats.totalSessions)} />
           <StatCard label="Distancia total" value={formatDistance(stats.totalDistanceMeters)} />
           <StatCard label="Tiempo total" value={formatDuration(stats.totalDurationSeconds)} />
           <StatCard label="Mejor ritmo" value={formatPace(stats.bestPaceSecPerKm)} />
+          {(stats.totalCaloriesBurned ?? 0) > 0 && (
+            <StatCard label="Calorías totales" value={`${stats.totalCaloriesBurned?.toLocaleString('es-AR')} kcal`} />
+          )}
         </div>
       )}
+
+      {/* Profile panel */}
+      <div className="mb-8">
+        <button
+          onClick={() => setShowProfile((v) => !v)}
+          className="text-sm text-gray-400 hover:text-white transition-colors mb-3 flex items-center gap-1"
+        >
+          {showProfile ? '▲' : '▼'} Datos físicos {!profile.weight_kg && <span className="text-yellow-500 text-xs ml-1">· Sin configurar (calorías desactivadas)</span>}
+        </button>
+        {showProfile && (
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 flex flex-col gap-4">
+            <p className="text-xs text-gray-500">Se usan para estimar las calorías de cada sesión. Se sincroniza automáticamente con la app móvil.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Peso (kg)</label>
+                <input
+                  type="number"
+                  min={20}
+                  max={300}
+                  value={profileWeight}
+                  onChange={(e) => setProfileWeight(e.target.value)}
+                  placeholder="Ej: 72"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Año de nacimiento</label>
+                <input
+                  type="number"
+                  min={1920}
+                  max={new Date().getFullYear() - 5}
+                  value={profileBirthYear}
+                  onChange={(e) => setProfileBirthYear(e.target.value)}
+                  placeholder="Ej: 1990"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Sexo biológico</label>
+                <div className="flex gap-2">
+                  {(['male', 'female'] as const).map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => setProfileSex(profileSex === s ? null : s)}
+                      className={`flex-1 py-2 rounded-lg text-sm border transition-colors ${profileSex === s ? 'border-brand text-brand bg-green-950' : 'border-gray-700 text-gray-400 hover:border-gray-500'}`}
+                    >
+                      {s === 'male' ? 'Masculino' : 'Femenino'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleSaveProfile}
+                disabled={savingProfile}
+                className="bg-brand text-black font-semibold text-sm px-5 py-2 rounded-lg hover:opacity-90 disabled:opacity-50 transition-opacity"
+              >
+                {savingProfile ? 'Guardando…' : 'Guardar'}
+              </button>
+              {profileMsg && (
+                <span className={`text-sm ${profileMsg.includes('Error') ? 'text-red-400' : 'text-green-400'}`}>
+                  {profileMsg}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Sessions list */}
       <h2 className="text-lg font-semibold mb-4">Historial</h2>
@@ -185,10 +315,13 @@ export default function DashboardPage() {
                   </span>
                   <span className="text-xs text-gray-500">{formatDate(s.started_at)}</span>
                 </div>
-                <div className="flex gap-4 text-sm mt-1">
+                <div className="flex gap-4 text-sm mt-1 flex-wrap">
                   <span className="text-white font-medium">{formatDistance(s.distance_meters)}</span>
                   <span className="text-gray-400">{formatDuration(s.duration_seconds)}</span>
                   <span className="text-gray-400">{formatPace(s.avg_pace_sec_per_km)}</span>
+                  {s.calories_burned != null && (
+                    <span className="text-orange-400">{s.calories_burned} kcal</span>
+                  )}
                 </div>
               </Link>
               <button

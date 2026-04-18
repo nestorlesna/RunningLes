@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
       supabase
         .from('sessions')
         .select(
-          'duration_seconds, distance_meters, avg_pace_sec_per_km, avg_speed_mps',
+          'duration_seconds, distance_meters, avg_pace_sec_per_km, avg_speed_mps, calories_burned',
         )
         .eq('user_id', user.id)
         .not('ended_at', 'is', null),
@@ -50,13 +50,19 @@ export async function GET(req: NextRequest) {
       ? weeklyResult.data
       : []
 
-    const stats: UserStats = {
+    const totalCaloriesBurned = rows.reduce(
+      (sum, r) => sum + ((r as Record<string, unknown>).calories_burned as number ?? 0),
+      0,
+    )
+
+    const stats: UserStats & { totalCaloriesBurned: number } = {
       totalSessions,
       totalDistanceMeters,
       totalDurationSeconds,
       avgPaceSecPerKm,
       bestPaceSecPerKm,
       weeklyDistance,
+      totalCaloriesBurned,
     }
 
     return NextResponse.json(stats)

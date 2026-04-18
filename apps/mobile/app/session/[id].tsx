@@ -126,15 +126,18 @@ export default function SessionDetailScreen() {
           <Stat label="Ritmo prom." value={pace} />
         </View>
 
-        {session.maxSpeedMps != null && (
-          <View style={styles.statsRow}>
+        <View style={styles.statsRow}>
+          {session.maxSpeedMps != null && (
             <Stat
               label="Vel. máx."
               value={`${(session.maxSpeedMps * 3.6).toFixed(1)} km/h`}
             />
-            <Stat label="Puntos GPS" value={String(points.length)} />
-          </View>
-        )}
+          )}
+          {session.caloriesBurned != null && (
+            <Stat label="Calorías" value={`${session.caloriesBurned} kcal`} />
+          )}
+          <Stat label="Puntos GPS" value={String(points.length)} />
+        </View>
 
         {session.notes ? (
           <Text style={styles.notes}>{session.notes}</Text>
