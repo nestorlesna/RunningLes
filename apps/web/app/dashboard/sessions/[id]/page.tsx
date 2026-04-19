@@ -301,6 +301,52 @@ export default function SessionDetailPage() {
     setDeletingPointId(null)
   }
 
+  // ── Interpolate GPS point (place it at midpoint between prev and next) ──
+  async function handleInterpolatePoint(pointId: string, index: number) {
+    if (!session) return
+    const prev = session.gpsPoints[index - 1]
+    const next = session.gpsPoints[index + 1]
+    if (!prev || !next) return
+
+    const lat = (prev.latitude + next.latitude) / 2
+    const lng = (prev.longitude + next.longitude) / 2
+
+    setPointError(null)
+    setSavingPoint(true)
+    const freshToken = await getFreshToken()
+    try {
+      const res = await fetch(`/api/gps-points/${pointId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${freshToken}`,
+        },
+        body: JSON.stringify({ latitude: lat, longitude: lng }),
+      })
+      if (res.ok) {
+        const updated = await res.json()
+        setSession((s) =>
+          s
+            ? {
+                ...s,
+                gpsPoints: s.gpsPoints.map((p) =>
+                  p.id === pointId
+                    ? { ...p, latitude: updated.latitude, longitude: updated.longitude }
+                    : p
+                ),
+              }
+            : s
+        )
+      } else {
+        const body = await res.json().catch(() => ({}))
+        setPointError(`Error al interpolar (${res.status}): ${body?.error ?? 'Error desconocido'}`)
+      }
+    } catch {
+      setPointError('Error de red al interpolar el punto.')
+    }
+    setSavingPoint(false)
+  }
+
   // ── Save edited GPS point ──
   async function handleSavePoint(pointId: string) {
     const lat = parseFloat(editLat)
@@ -764,6 +810,16 @@ export default function SessionDetailPage() {
                               >
                                 Editar
                               </button>
+                              {i > 0 && i < session.gpsPoints.length - 1 && (
+                                <button
+                                  onClick={() => handleInterpolatePoint(point.id, i)}
+                                  disabled={savingPoint}
+                                  title="Mover este punto al centro exacto entre el anterior y el siguiente"
+                                  className="text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50"
+                                >
+                                  Centrar
+                                </button>
+                              )}
                               <button
                                 onClick={() => handleDeletePoint(point.id)}
                                 disabled={deletingPointId === point.id}

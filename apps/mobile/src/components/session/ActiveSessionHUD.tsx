@@ -2,16 +2,19 @@ import React, { useEffect, useRef } from 'react'
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native'
 import { useSessionStore } from '../../store/sessionStore'
 import { formatDuration, formatPace } from '@runningl-es/shared'
+import { announceKm, announceTime } from '../../services/announcements/announcementService'
 
 interface Props {
   onStop: () => void
 }
 
 export function ActiveSessionHUD({ onStop }: Props) {
-  const { elapsedSeconds, totalDistanceMeters, currentSpeedMps, tickSecond } =
+  const { elapsedSeconds, totalDistanceMeters, currentSpeedMps, tickSecond, lastKmAnnounced, lastMinAnnounced } =
     useSessionStore()
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const prevKmRef = useRef(0)
+  const prevMinRef = useRef(0)
 
   useEffect(() => {
     intervalRef.current = setInterval(tickSecond, 1000)
@@ -19,6 +22,20 @@ export function ActiveSessionHUD({ onStop }: Props) {
       if (intervalRef.current) clearInterval(intervalRef.current)
     }
   }, [tickSecond])
+
+  useEffect(() => {
+    if (lastKmAnnounced > prevKmRef.current) {
+      announceKm(lastKmAnnounced)
+      prevKmRef.current = lastKmAnnounced
+    }
+  }, [lastKmAnnounced])
+
+  useEffect(() => {
+    if (lastMinAnnounced > prevMinRef.current) {
+      announceTime(lastMinAnnounced)
+      prevMinRef.current = lastMinAnnounced
+    }
+  }, [lastMinAnnounced])
 
   const distanceKm = (totalDistanceMeters / 1000).toFixed(2)
   const pace = formatPace(currentSpeedMps)
