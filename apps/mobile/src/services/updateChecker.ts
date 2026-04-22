@@ -27,7 +27,7 @@ export async function checkForUpdate(): Promise<void> {
 
     const data = await res.json()
     const latestTag: string = data.tag_name ?? ''
-    const current = Constants.nativeAppVersion ?? '0.0.0'
+    const current = Constants.nativeAppVersion ?? Constants.expoConfig?.version ?? '0.0.0'
 
     if (latestTag && isNewer(latestTag, current)) {
       Alert.alert(

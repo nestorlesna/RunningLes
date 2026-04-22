@@ -69,7 +69,12 @@ $Content = $Content -replace "versionCode\s+$CurrentCode", "versionCode $NewCode
 $Content = $Content -replace 'versionName\s+"[^"]*"', "versionName `"$Version`""
 Set-Content $GradlePath $Content -NoNewline
 
-git add apps/mobile/android/app/build.gradle
+$AppConfigPath = "apps/mobile/app.config.ts"
+$AppConfig = Get-Content $AppConfigPath -Raw
+$AppConfig = $AppConfig -replace "version: '[^']*'", "version: '$Version'"
+Set-Content $AppConfigPath $AppConfig -NoNewline
+
+git add apps/mobile/android/app/build.gradle apps/mobile/app.config.ts
 git commit -m "chore: bump version to $Version"
 git tag "v$Version"
 git push origin HEAD
