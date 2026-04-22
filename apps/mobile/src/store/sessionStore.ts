@@ -10,6 +10,8 @@ interface SessionState {
   elapsedSeconds: number
   totalDistanceMeters: number
   currentSpeedMps: number
+  lastKmAnnounced: number
+  lastMinAnnounced: number
 
   startSession: (sessionId: string, type: ActivityType) => void
   stopSession: () => void
@@ -26,6 +28,8 @@ const initialState = {
   elapsedSeconds: 0,
   totalDistanceMeters: 0,
   currentSpeedMps: 0,
+  lastKmAnnounced: 0,
+  lastMinAnnounced: 0,
 }
 
 export const useSessionStore = create<SessionState>((set, get) => ({
@@ -57,17 +61,33 @@ export const useSessionStore = create<SessionState>((set, get) => ({
             )
           : 0
 
+      const newDistance = state.totalDistanceMeters + delta
+      const newKm = Math.floor(newDistance / 1000)
+      const kmAnnounced = newKm > state.lastKmAnnounced && newKm > 0
+        ? newKm
+        : state.lastKmAnnounced
+
       return {
         currentPoints: [...state.currentPoints, point],
-        totalDistanceMeters: state.totalDistanceMeters + delta,
+        totalDistanceMeters: newDistance,
         currentSpeedMps: point.speedMps ?? state.currentSpeedMps,
+        lastKmAnnounced: kmAnnounced,
       }
     })
   },
 
   tickSecond() {
     if (get().isRunning) {
-      set((state) => ({ elapsedSeconds: state.elapsedSeconds + 1 }))
+      set((state) => {
+        const newSeconds = state.elapsedSeconds + 1
+        const newMinutes = Math.floor(newSeconds / 60)
+        const isHalfHour = newMinutes > 0 && newMinutes % 30 === 0
+        const minAnnounced = isHalfHour && newMinutes !== state.lastMinAnnounced
+          ? newMinutes
+          : state.lastMinAnnounced
+
+        return { elapsedSeconds: newSeconds, lastMinAnnounced: minAnnounced }
+      })
     }
   },
 

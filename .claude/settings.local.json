@@ -18,7 +18,12 @@
       "Bash(pnpm build:*)",
       "Bash(pnpm typecheck:*)",
       "Bash(git push:*)",
-      "Bash(pnpm add *)"
+      "Bash(pnpm add *)",
+      "Bash(git -C C:/RunningLes status)",
+      "Bash(git -C C:/RunningLes diff)",
+      "Bash(git -C C:/RunningLes add apps/mobile/package.json apps/mobile/src/components/session/ActiveSessionHUD.tsx apps/mobile/src/store/sessionStore.ts apps/mobile/src/services/announcements/ apps/web/app/dashboard/sessions/[id]/page.tsx)",
+      "Bash(git -C C:/RunningLes commit -m ' *)",
+      "Bash(git *)"
     ]
   }
 }

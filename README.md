@@ -13,7 +13,8 @@ App personal de running/walking para Android. Registra recorridos con GPS en bac
 | DB local | WatermelonDB (SQLite) |
 | GPS | expo-location + expo-task-manager (Foreground Service) |
 | Mapa móvil | react-native-maps con Google Maps (requiere API key) |
-| Build APK | EAS Build (cloud, evita límite de 260 chars en Windows) |
+| Build APK | GitHub Actions + Gradle (firma automática, APK en GitHub Releases) |
+| Build APK manual | Android Studio (Generate Signed APK) |
 | Actualizaciones OTA | EAS Update (expo-updates) — sin nuevo APK |
 | Sesión persistente | AsyncStorage (@react-native-async-storage/async-storage) |
 | Web frontend | Next.js 14 (landing, login, dashboard, mapa de rutas) |
@@ -41,7 +42,7 @@ runningl-es/
 │   │   │   │   ├── database/ # WatermelonDB schema, modelos, sync
 │   │   │   │   └── location/ # GPS background task y service
 │   │   │   └── store/        # Zustand (sessionStore, uiStore)
-│   │   └── android/          # Generado por expo prebuild (no committear)
+│   │   └── android/          # Proyecto Android nativo (commiteado en el repo)
 │   └── web/                  # Next.js (frontend + backend)
 │       ├── app/
 │       │   ├── page.tsx      # Landing page (/)
@@ -250,66 +251,91 @@ O abrir directamente en el browser:
 
 ## Build de la app Android
 
-### Método recomendado: EAS Build (cloud)
+### Método automático: GitHub Actions (recomendado para distribución)
 
-En Windows, el límite de 260 caracteres en rutas impide compilar con Gradle local. Usamos **EAS Build** para compilar en la nube.
+Al crear un tag `v*`, GitHub Actions compila el APK firmado y lo publica en GitHub Releases automáticamente. Ver sección [Release — Distribución automática](#release--distribución-automática-github-actions).
 
-#### Prerrequisitos únicos
+### Build manual desde Android Studio
 
-```bash
-npm install -g eas-cli
-cd apps/mobile
-eas login          # cuenta Expo
+Para builds de prueba o cuando se quiere el APK sin publicar una release:
+
+1. Desde la raíz del monorepo, instalar dependencias:
+   ```bash
+   pnpm install
+   ```
+
+2. Abrir Android Studio → **Open** → seleccionar la carpeta `apps/mobile/android/`
+
+3. Esperar que Gradle sincronice (primera vez tarda varios minutos)
+
+4. Menú **Build → Generate Signed Bundle / APK**
+
+5. Elegir **APK** → Next
+
+6. En *Key store path* apuntar a `KEY/release.keystore`
+   - *Key store password*: contraseña del keystore
+   - *Key alias*: `runningl_es`
+   - *Key password*: contraseña de la clave
+
+7. Elegir variante **release** → Next → **Finish**
+
+El APK firmado queda en `apps/mobile/android/app/release/RunningLes.apk`.
+
+> El JS bundle se compila automáticamente durante el build de Gradle (Metro bundler se invoca internamente). No hace falta un paso separado de build web.
+
+---
+
+## Release — Distribución automática (GitHub Actions)
+
+El APK se genera y publica automáticamente mediante **GitHub Actions** al crear un tag con prefijo `v`.
+
+### Secrets de GitHub (configurar una sola vez)
+
+En **Settings → Secrets and variables → Actions → New repository secret**:
+
+| Secret | Contenido |
+|--------|-----------|
+| `KEYSTORE_BASE64` | Keystore en base64 — ver comando abajo |
+| `KEYSTORE_PASSWORD` | Contraseña del keystore |
+| `KEY_ALIAS` | Alias de la clave (`runningl_es`) |
+| `KEY_PASSWORD` | Contraseña de la clave |
+| `EXPO_PUBLIC_SUPABASE_URL` | URL de Supabase |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Anon key de Supabase |
+| `EXPO_PUBLIC_API_BASE_URL` | URL del backend (`https://runningles-api.vercel.app`) |
+
+Para generar el valor de `KEYSTORE_BASE64`:
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("KEY\release.keystore")) | Set-Clipboard
 ```
 
-#### Build APK (production)
+También activar **Settings → Actions → General → Workflow permissions → Read and write permissions**.
 
-```bash
-cd apps/mobile
-eas build --platform android --profile production --non-interactive
+### Publicar una nueva versión
+
+```powershell
+# Desde la raíz del monorepo — actualiza build.gradle, hace commit, tag y push
+.\scripts\release.ps1 1.0.1
 ```
 
-Al terminar, EAS entrega un link directo al APK:
+El script:
+1. Incrementa `versionCode` en `apps/mobile/android/app/build.gradle`
+2. Actualiza `versionName` al valor indicado
+3. Hace commit, crea el tag `v1.0.1` y hace push
+
+GitHub Actions construye el APK firmado y lo publica como GitHub Release con `RunningLes.apk` adjunto.
+
+### Flujo resumido
+
 ```
-🤖 Android app:
-https://expo.dev/artifacts/eas/....apk
-```
-
-Descargar e instalar:
-```bash
-# En el dispositivo: descargar desde el link y abrir el APK
-# (activar "Instalar desde fuentes desconocidas" en Ajustes)
-
-# O via adb:
-adb install <ruta-local-al-apk>
-```
-
-#### Variables de entorno en EAS
-
-Las variables `EXPO_PUBLIC_*` deben cargarse en el dashboard de EAS:
-- **expo.dev → proyecto running-les → Environment Variables**
-- Cargar: `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`, `EXPO_PUBLIC_API_BASE_URL`
-- Environment: **Production**
-
-#### Google Maps API Key
-
-La API key de Google Maps va directamente en `app.config.ts` (campo `android.config.googleMaps.apiKey`). No hace falta variable de entorno ya que se embebe en el manifest nativo durante el build.
-
-Para restringir la key (recomendado):
-- Google Cloud Console → API key → Restricciones de aplicación → **Apps Android**
-- Package name: `com.personal.runningl_es`
-- SHA-1: obtener con `eas credentials`
-
-### Build local (alternativa, solo en Linux/Mac)
-
-```bash
-cd apps/mobile
-npx expo prebuild --platform android --clean
-cd android
-./gradlew assembleRelease
+.\scripts\release.ps1 X.Y.Z
+  → bump versionCode/versionName en build.gradle
+  → git commit + tag vX.Y.Z + push
+  → GitHub Actions: pnpm install → gradle assembleRelease (Metro bundlea el JS internamente)
+  → firma APK con keystore desde secrets
+  → GitHub Release con RunningLes.apk adjunto
 ```
 
-> En Windows, el path de Gradle supera los 260 chars y el build falla. Usar EAS Build en su lugar.
+> El keystore vive en `KEY/` (ignorado por git). No subir al repositorio.
 
 ---
 
@@ -371,7 +397,7 @@ eas build --platform android --profile production --non-interactive
 |---|---|
 | `apps/web/` (backend) | `vercel deploy --prod` |
 | JS/TS en la app | `eas update --branch production --message "..."` |
-| Deps nativas / `app.config.ts` | `eas build --platform android --profile production --non-interactive` |
+| Nuevo APK para distribución | `.\scripts\release.ps1 X.Y.Z` |
 
 ---
 
@@ -402,9 +428,9 @@ vercel deploy --prod
 cd apps/mobile
 eas update --branch production --message "descripción del cambio"
 
-# 6b. Deploy app — cambios nativos (nuevo APK, ~20-30 min)
-cd apps/mobile
-eas build --platform android --profile production --non-interactive
+# 6b. Nuevo APK — desde la raíz del monorepo (PowerShell)
+.\scripts\release.ps1 X.Y.Z
+# GitHub Actions compila y publica RunningLes.apk en GitHub Releases
 ```
 
 ---
@@ -420,7 +446,7 @@ npm install -g pnpm
 Verificar que el Root Directory en Vercel esté configurado como `apps/web` (Settings → General → Root Directory).
 
 ### Build local falla en Windows (path demasiado largo)
-Gradle en Windows supera el límite de 260 caracteres. Solución: usar **EAS Build** (cloud).
+Gradle en Windows puede superar el límite de 260 caracteres. Usar **Android Studio** para builds locales (maneja las rutas internamente) o publicar via `.\scripts\release.ps1` para que compile en GitHub Actions (Linux).
 
 ### App se queda en splash / crash al iniciar
 - Revisar que WatermelonDB esté con `jsi: false` en `src/services/database/index.ts`.
@@ -499,7 +525,7 @@ Ambas tablas tienen RLS activo — cada usuario solo ve sus propios datos.
 | Next.js | 14.2.35 |
 | pnpm | 9.x |
 | Node.js | 20+ |
-| EAS CLI | 10.0+ |
+| EAS CLI | 10.0+ (solo para OTA updates, no para builds de APK) |
 | expo-updates | 0.25.28 (OTA updates activo, canal `production`) |
 | AsyncStorage | 1.23.1 (sesión Supabase persiste entre reinicios) |
 | WatermelonDB JSI | **false** (JSI nativo causa crash en EAS builds) |

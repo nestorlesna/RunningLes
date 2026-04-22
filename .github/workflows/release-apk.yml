@@ -1,0 +1,100 @@
+name: Build & Release APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Build APK and Create Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Make Gradle executable
+        run: chmod +x apps/mobile/android/gradlew
+
+      - name: Decode Keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > apps/mobile/android/app/release.keystore
+
+      - name: Build Release APK
+        working-directory: apps/mobile/android
+        env:
+          KEYSTORE_FILE: release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+          EXPO_PUBLIC_API_BASE_URL: ${{ secrets.EXPO_PUBLIC_API_BASE_URL }}
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Find and rename APK
+        id: find_apk
+        run: |
+          APK_DEST="apps/mobile/android/app/build/outputs/apk/release/RunningLes.apk"
+          APK_SOURCE=$(find apps/mobile/android/app/build/outputs/apk/release/ -name "*.apk" ! -name "RunningLes.apk" | head -1)
+          if [ -n "$APK_SOURCE" ]; then
+            mv "$APK_SOURCE" "$APK_DEST"
+          fi
+          echo "apk_path=$APK_DEST" >> $GITHUB_OUTPUT
+
+      - name: Extract version
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "v${{ steps.version.outputs.version }}"
+          tag_name: ${{ github.ref_name }}
+          body: |
+            ## Instalación
+
+            1. Descargar el archivo `.apk` desde los assets de abajo
+            2. En Android: **Configuración → Seguridad → Instalar apps desconocidas** (activar para el navegador/explorador usado)
+            3. Abrir el APK descargado e instalar
+            4. Si ya tenías la app instalada, se actualizará automáticamente manteniendo tus datos
+
+            ---
+            *Build generado automáticamente desde el tag `${{ github.ref_name }}`*
+          files: ${{ steps.find_apk.outputs.apk_path }}
+          draft: false
+          prerelease: false

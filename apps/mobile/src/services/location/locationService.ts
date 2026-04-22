@@ -3,6 +3,8 @@ import { LOCATION_TASK_NAME } from './backgroundTask'
 import { database } from '../database'
 import Session from '../database/models/Session'
 import { useSessionStore } from '../../store/sessionStore'
+import { useProfileStore } from '../../store/profileStore'
+import { estimateCalories } from '@runningl-es/shared'
 import type { ActivityType } from '@runningl-es/shared'
 
 const LOCATION_OPTIONS: Location.LocationTaskOptions = {
@@ -70,7 +72,7 @@ export async function stopTracking(): Promise<void> {
   const {
     sessionId,
     totalDistanceMeters,
-    currentSpeedMps,
+    activityType,
     currentPoints,
   } = store
 
@@ -89,12 +91,39 @@ export async function stopTracking(): Promise<void> {
   const maxSpeedMps = speeds.length > 0 ? Math.max(...speeds) : 0
   const avgPaceSecPerKm = avgSpeedMps > 0 ? 1000 / avgSpeedMps : null
 
+  // Elevation gain from GPS altitude data
+  let elevationGainMeters = 0
+  for (let i = 1; i < currentPoints.length; i++) {
+    const prev = currentPoints[i - 1]
+    const curr = currentPoints[i]
+    if (prev.altitude != null && curr.altitude != null && curr.altitude > prev.altitude) {
+      elevationGainMeters += curr.altitude - prev.altitude
+    }
+  }
+
+  // Calorie estimation using GPS speed segments + user profile
+  const profile = useProfileStore.getState()
+  const caloriesBurned = profile.weightKg
+    ? estimateCalories({
+        activityType,
+        weightKg: profile.weightKg,
+        birthYear: profile.birthYear,
+        sex: profile.sex,
+        points: currentPoints,
+        durationSeconds,
+        distanceMeters: totalDistanceMeters,
+        elevationGainMeters: elevationGainMeters > 0 ? elevationGainMeters : null,
+      })
+    : null
+
   await session.finalize(
     durationSeconds,
     totalDistanceMeters,
     avgPaceSecPerKm ?? 0,
     maxSpeedMps,
     avgSpeedMps,
+    caloriesBurned,
+    elevationGainMeters > 0 ? elevationGainMeters : null,
   )
 
   // 3. Reset store

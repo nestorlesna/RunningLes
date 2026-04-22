@@ -1,7 +1,7 @@
 import { appSchema, tableSchema } from '@nozbe/watermelondb'
 
 export const dbSchema = appSchema({
-  version: 1,
+  version: 2,
   tables: [
     tableSchema({
       name: 'sessions',
@@ -15,6 +15,7 @@ export const dbSchema = appSchema({
         { name: 'max_speed_mps', type: 'number', isOptional: true },
         { name: 'avg_speed_mps', type: 'number', isOptional: true },
         { name: 'elevation_gain_meters', type: 'number', isOptional: true },
+        { name: 'calories_burned', type: 'number', isOptional: true },
         { name: 'activity_type', type: 'string' },     // 'run' | 'walk'
         { name: 'notes', type: 'string', isOptional: true },
         { name: 'synced', type: 'boolean' },
