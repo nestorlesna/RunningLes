@@ -9,7 +9,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 function Write-Step($msg) { Write-Host "`n→ $msg" -ForegroundColor Cyan }
-function Write-Ok($msg)   { Write-Host "  ✓ $msg" -ForegroundColor Green }
+function Write-Ok($msg)   { Write-Host "  OK $msg" -ForegroundColor Green }
 function Write-Warn($msg) { Write-Host "  ! $msg" -ForegroundColor Yellow }
 
 # ── 1. Commitear cambios pendientes ──────────────────────────────────────────
