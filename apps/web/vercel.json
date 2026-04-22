@@ -1,5 +1,5 @@
 {
-  "installCommand": "cd ../.. && COREPACK_ENABLE_STRICT=0 pnpm install",
+  "installCommand": "cd ../.. && COREPACK_ENABLE_STRICT=0 pnpm install --no-frozen-lockfile",
   "buildCommand": "pnpm build",
   "outputDirectory": ".next"
 }
