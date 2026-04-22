@@ -23,7 +23,8 @@
       "Bash(git -C C:/RunningLes diff)",
       "Bash(git -C C:/RunningLes add apps/mobile/package.json apps/mobile/src/components/session/ActiveSessionHUD.tsx apps/mobile/src/store/sessionStore.ts apps/mobile/src/services/announcements/ apps/web/app/dashboard/sessions/[id]/page.tsx)",
       "Bash(git -C C:/RunningLes commit -m ' *)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(powershell.exe *)"
     ]
   }
 }
