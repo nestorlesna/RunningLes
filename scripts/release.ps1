@@ -51,7 +51,7 @@ if ($SkipWeb) {
     Write-Warn "Web deploy omitido (-SkipWeb)"
 } else {
     Write-Step "Deploying web en Vercel..."
-    vercel deploy --prod
+    vercel deploy --prod --force
     Write-Ok "Web deployado → https://runningles-api.vercel.app"
 }
 
