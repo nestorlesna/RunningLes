@@ -1,4 +1,4 @@
-import { cacheDirectory, writeAsStringAsync, readAsStringAsync, EncodingType } from 'expo-file-system/legacy'
+import { cacheDirectory, writeAsStringAsync, readAsStringAsync, EncodingType } from 'expo-file-system'
 import * as Sharing from 'expo-sharing'
 import * as DocumentPicker from 'expo-document-picker'
 import { Q } from '@nozbe/watermelondb'
