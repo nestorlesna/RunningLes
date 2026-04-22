@@ -79,6 +79,11 @@ export default function DashboardPage() {
   const [profileMsg, setProfileMsg] = useState('')
   const [showProfile, setShowProfile] = useState(false)
 
+  // Backup state
+  const [exporting, setExporting] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [backupMsg, setBackupMsg] = useState('')
+
   useEffect(() => {
     async function loadInitial() {
       const { data: { session } } = await supabaseBrowser.auth.getSession()
@@ -154,6 +159,54 @@ export default function DashboardPage() {
   async function handleLogout() {
     await supabaseBrowser.auth.signOut()
     router.push('/login')
+  }
+
+  async function handleExport() {
+    setExporting(true)
+    setBackupMsg('')
+    try {
+      const res = await fetch('/api/export', { headers: { Authorization: `Bearer ${token}` } })
+      if (!res.ok) throw new Error('Error al exportar')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `runningl-es-backup-${new Date().toISOString().split('T')[0]}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      setBackupMsg('Error al exportar')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+
+    setImporting(true)
+    setBackupMsg('')
+    try {
+      const text = await file.text()
+      const json = JSON.parse(text)
+      const res = await fetch('/api/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(json),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Error al importar')
+      setBackupMsg(
+        `Importado: ${data.sessionsUpserted} sesión${data.sessionsUpserted !== 1 ? 'es' : ''}${data.profileUpdated ? ', perfil actualizado' : ''}`,
+      )
+      setTimeout(() => window.location.reload(), 1500)
+    } catch (err) {
+      setBackupMsg(err instanceof Error ? err.message : 'Error al importar')
+    } finally {
+      setImporting(false)
+    }
   }
 
   async function handleSaveProfile() {
@@ -293,6 +346,26 @@ export default function DashboardPage() {
               )}
             </div>
           </div>
+        )}
+      </div>
+
+      {/* Backup / restore */}
+      <div className="flex flex-wrap items-center gap-3 mb-8">
+        <button
+          onClick={handleExport}
+          disabled={exporting || !token}
+          className="text-sm px-4 py-2 rounded-lg border border-gray-700 text-gray-300 hover:text-white hover:border-gray-500 disabled:opacity-40 transition-colors"
+        >
+          {exporting ? 'Exportando…' : '↓ Exportar backup'}
+        </button>
+        <label className={`text-sm px-4 py-2 rounded-lg border border-gray-700 text-gray-300 hover:text-white hover:border-gray-500 transition-colors cursor-pointer ${importing ? 'opacity-40 pointer-events-none' : ''}`}>
+          {importing ? 'Importando…' : '↑ Importar backup'}
+          <input type="file" accept=".json,application/json" className="hidden" onChange={handleImport} disabled={importing} />
+        </label>
+        {backupMsg && (
+          <span className={`text-sm ${backupMsg.startsWith('Error') ? 'text-red-400' : 'text-green-400'}`}>
+            {backupMsg}
+          </span>
         )}
       </div>
 

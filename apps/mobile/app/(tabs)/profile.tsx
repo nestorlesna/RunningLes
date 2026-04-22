@@ -13,6 +13,7 @@ import { supabase } from '../../src/lib/supabase'
 import { useUIStore } from '../../src/store/uiStore'
 import { useProfileStore } from '../../src/store/profileStore'
 import { syncDatabase, pullFromServer } from '../../src/services/database/sync'
+import { exportBackup, importBackup } from '../../src/services/database/backupService'
 import type { User } from '@supabase/supabase-js'
 
 const API_BASE_URL: string = process.env.EXPO_PUBLIC_API_BASE_URL ?? ''
@@ -33,6 +34,7 @@ export default function ProfileScreen() {
   const [editSex, setEditSex] = useState<'male' | 'female' | null>(null)
   const [savingProfile, setSavingProfile] = useState(false)
   const [profileSaved, setProfileSaved] = useState(false)
+  const [backupLoading, setBackupLoading] = useState(false)
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data.user))
@@ -115,6 +117,37 @@ export default function ProfileScreen() {
   function formatSyncTime(ts: number | null) {
     if (!ts) return 'Nunca'
     return new Date(ts).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'medium' })
+  }
+
+  async function handleExport() {
+    setBackupLoading(true)
+    try {
+      await exportBackup()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Error al exportar'
+      if (msg !== 'Cancelado') Alert.alert('Error', msg)
+    } finally {
+      setBackupLoading(false)
+    }
+  }
+
+  async function handleImport() {
+    setBackupLoading(true)
+    try {
+      const result = await importBackup()
+      const parts: string[] = []
+      if (result.sessionsImported > 0)
+        parts.push(`${result.sessionsImported} sesión${result.sessionsImported !== 1 ? 'es' : ''} importada${result.sessionsImported !== 1 ? 's' : ''}`)
+      if (result.sessionsUpdated > 0)
+        parts.push(`${result.sessionsUpdated} actualizada${result.sessionsUpdated !== 1 ? 's' : ''}`)
+      if (result.profileUpdated) parts.push('perfil actualizado')
+      Alert.alert('Importación completa', parts.length > 0 ? parts.join(', ') : 'Sin cambios nuevos')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Error al importar'
+      if (msg !== 'Cancelado') Alert.alert('Error', msg)
+    } finally {
+      setBackupLoading(false)
+    }
   }
 
   if (user) {
@@ -265,6 +298,36 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Backup / restore */}
+        <View style={styles.syncCard}>
+          <Text style={styles.syncTitle}>Copia de seguridad</Text>
+          <Text style={styles.pullDescription}>
+            Exportá todos tus datos (perfil + sesiones + GPS) a un archivo JSON. Al importar, se actualizan los datos locales sin duplicar sesiones existentes.
+          </Text>
+          <View style={styles.backupRow}>
+            <TouchableOpacity
+              style={[styles.backupBtn, backupLoading && styles.syncBtnDisabled]}
+              onPress={handleExport}
+              disabled={backupLoading}
+            >
+              {backupLoading
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Text style={styles.syncBtnLabel}>↓ Exportar backup</Text>
+              }
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.backupBtn, styles.backupBtnImport, backupLoading && styles.syncBtnDisabled]}
+              onPress={handleImport}
+              disabled={backupLoading}
+            >
+              {backupLoading
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Text style={styles.syncBtnLabel}>↑ Importar backup</Text>
+              }
+            </TouchableOpacity>
+          </View>
+        </View>
+
         <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut}>
           <Text style={styles.signOutLabel}>Cerrar sesión</Text>
         </TouchableOpacity>
@@ -413,6 +476,15 @@ const styles = StyleSheet.create({
     borderColor: '#166534',
   },
   pullResultText: { color: '#86efac', fontSize: 13 },
+  backupRow: { flexDirection: 'row', gap: 10 },
+  backupBtn: {
+    flex: 1,
+    backgroundColor: '#0f766e',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  backupBtnImport: { backgroundColor: '#92400e' },
   signOutBtn: {
     backgroundColor: '#1e293b',
     borderRadius: 12,
