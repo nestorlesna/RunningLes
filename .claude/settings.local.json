@@ -27,7 +27,20 @@
       "Bash(powershell.exe *)",
       "Bash(pnpm tsc *)",
       "Bash(pnpm install *)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(vercel deploy *)",
+      "Bash(pnpm *)",
+      "Bash(del pnpm-lock.yaml)",
+      "Bash(vercel inspect *)",
+      "Bash(npm info *)",
+      "Bash(npm bin *)",
+      "Bash(ls \"$\\(npm bin -g\\)/pnpm\")",
+      "Bash(npm root *)",
+      "Bash(node -e \"console.log\\(require\\('pnpm/package.json'\\).version\\)\")",
+      "Bash(node *)",
+      "Bash(\"C:/Users/nesto/AppData/Roaming/npm/pnpm\" --version)",
+      "Bash(rm -rf node_modules apps/mobile/node_modules apps/web/node_modules packages/shared/node_modules)",
+      "Bash(\"C:/Users/nesto/AppData/Roaming/npm/pnpm\" install *)"
     ]
   }
 }
