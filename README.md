@@ -313,26 +313,25 @@ También activar **Settings → Actions → General → Workflow permissions →
 ### Publicar una nueva versión
 
 ```powershell
-# Desde la raíz del monorepo — actualiza build.gradle, hace commit, tag y push
-.\scripts\release.ps1 1.0.1
+# Deploy completo: web + APK (caso habitual)
+.\scripts\release.ps1 1.0.3
+
+# Solo APK, sin deploy web
+.\scripts\release.ps1 1.0.3 -SkipWeb
 ```
 
-El script:
-1. Incrementa `versionCode` en `apps/mobile/android/app/build.gradle`
-2. Actualiza `versionName` al valor indicado
-3. Hace commit, crea el tag `v1.0.1` y hace push
-
-GitHub Actions construye el APK firmado y lo publica como GitHub Release con `RunningLes.apk` adjunto.
+Ver sección [Deploy completo](#deploy-completo) para el detalle de cada paso.
 
 ### Flujo resumido
 
 ```
 .\scripts\release.ps1 X.Y.Z
-  → bump versionCode/versionName en build.gradle
-  → git commit + tag vX.Y.Z + push
-  → GitHub Actions: pnpm install → gradle assembleRelease (Metro bundlea el JS internamente)
-  → firma APK con keystore desde secrets
-  → GitHub Release con RunningLes.apk adjunto
+  → commit cambios pendientes (si los hay)
+  → push develop → merge develop→main → push main
+  → vercel deploy --prod
+  → bump versionCode/versionName → commit → tag vX.Y.Z → push
+  → GitHub Actions: pnpm install → gradle assembleRelease → firma APK
+  → GitHub Release con RunningLes.apk adjunto (~10 min)
 ```
 
 > El keystore vive en `KEY/` (ignorado por git). No subir al repositorio.
@@ -391,46 +390,40 @@ eas build --platform android --profile production --non-interactive
 
 ---
 
-## Proceso completo para una nueva versión
+## Deploy completo
 
-| Qué cambió | Comando de deploy |
-|---|---|
-| `apps/web/` (backend) | `vercel deploy --prod` |
-| JS/TS en la app | `eas update --branch production --message "..."` |
-| Nuevo APK para distribución | `.\scripts\release.ps1 X.Y.Z` |
+El script `scripts/release.ps1` hace todo el proceso en un solo comando desde la raíz del monorepo:
+
+```powershell
+.\scripts\release.ps1 1.0.3
+```
+
+**Qué hace el script paso a paso:**
+
+1. Si hay cambios sin commitear, pregunta si los commitea automáticamente
+2. Push de `develop` a GitHub
+3. Merge `develop → main` con `--no-ff` + push de `main`
+4. `vercel deploy --prod` → actualiza el backend
+5. Bump `versionCode` y `versionName` en `build.gradle` → commit → tag `v1.0.3` → push
+6. GitHub Actions se dispara: compila el APK en Linux, lo firma y lo publica en GitHub Releases
+
+**En ~10 minutos tenés:**
+- Web actualizada en https://runningles-api.vercel.app
+- `RunningLes.apk` disponible en github.com/nestorlesna/RunningLes/releases
 
 ---
 
-## Deploy completo (git + producción)
+**Si solo cambió el backend (sin nuevo APK):**
+```powershell
+.\scripts\release.ps1 1.0.3 -SkipWeb   # omite vercel, igual sube APK
+vercel deploy --prod                     # o solo web sin APK
+```
 
-Secuencia completa desde commit hasta producción:
-
-```bash
-# 1. Staging y commit
-git add .
-git commit -m "feat: descripción del cambio"
-
-# 2. Push a develop
-git push origin develop
-
-# 3. Merge a main
-git checkout main
-git merge develop
-git push origin main
-
-# 4. Volver a develop
-git checkout develop
-
-# 5. Deploy backend (si hay cambios en apps/web)
-vercel deploy --prod
-
-# 6a. Deploy app — solo cambios JS/TS (rápido, sin nuevo APK)
+**Si solo hay cambios JS/TS en la app (OTA, sin nuevo APK):**
+```powershell
+# Push + merge manual, luego:
 cd apps/mobile
 eas update --branch production --message "descripción del cambio"
-
-# 6b. Nuevo APK — desde la raíz del monorepo (PowerShell)
-.\scripts\release.ps1 X.Y.Z
-# GitHub Actions compila y publica RunningLes.apk en GitHub Releases
 ```
 
 ---
