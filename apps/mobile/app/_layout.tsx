@@ -5,6 +5,7 @@ import * as SplashScreen from 'expo-splash-screen'
 import * as Linking from 'expo-linking'
 import { View, Text, ScrollView, StyleSheet } from 'react-native'
 import { supabase } from '../src/lib/supabase'
+import { checkForUpdate } from '../src/services/updateChecker'
 
 SplashScreen.preventAutoHideAsync().catch(() => {})
 
@@ -50,6 +51,8 @@ function RootLayout() {
     Linking.getInitialURL().then((url) => { if (url) handleAuthDeepLink(url) })
     // Deep link: app ya abierta y llega el link
     const linkSub = Linking.addEventListener('url', ({ url }) => handleAuthDeepLink(url))
+
+    checkForUpdate()
 
     Promise.resolve()
       .then(() => {
