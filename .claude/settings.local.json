@@ -40,7 +40,9 @@
       "Bash(node *)",
       "Bash(\"C:/Users/nesto/AppData/Roaming/npm/pnpm\" --version)",
       "Bash(rm -rf node_modules apps/mobile/node_modules apps/web/node_modules packages/shared/node_modules)",
-      "Bash(\"C:/Users/nesto/AppData/Roaming/npm/pnpm\" install *)"
+      "Bash(\"C:/Users/nesto/AppData/Roaming/npm/pnpm\" install *)",
+      "Bash(vercel env *)",
+      "Bash(vercel logs *)"
     ]
   }
 }

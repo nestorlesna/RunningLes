@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
     const { data, error, count } = await supabase
       .from('sessions')
       .select(
-        'id, local_id, started_at, ended_at, duration_seconds, distance_meters, avg_pace_sec_per_km, max_speed_mps, avg_speed_mps, elevation_gain_meters, activity_type, notes, synced_at, created_at',
+        'id, local_id, started_at, ended_at, duration_seconds, distance_meters, avg_pace_sec_per_km, max_speed_mps, avg_speed_mps, elevation_gain_meters, calories_burned, activity_type, notes, synced_at, created_at',
         { count: 'exact' },
       )
       .eq('user_id', user.id)
