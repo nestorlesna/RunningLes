@@ -166,6 +166,10 @@ export default function SessionDetailPage() {
   const [rangeTo, setRangeTo] = useState('')
   const [deletingRange, setDeletingRange] = useState(false)
 
+  // Recalculate
+  const [recalculating, setRecalculating] = useState(false)
+  const [recalcMsg, setRecalcMsg] = useState<{ ok: boolean; text: string } | null>(null)
+
   // Chart collapse states
   const [speedExpanded, setSpeedExpanded] = useState(false)
   const [distExpanded, setDistExpanded] = useState(false)
@@ -246,6 +250,47 @@ export default function SessionDetailPage() {
         v: p.altitude!,
       }))
   }, [session?.gpsPoints, t0])
+
+  // ── Recalculate duration & calories ──
+  async function handleRecalculate() {
+    if (!session) return
+    setRecalculating(true)
+    setRecalcMsg(null)
+    const freshToken = await getFreshToken()
+    try {
+      const res = await fetch(`/api/sessions/${session.id}/recalculate`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${freshToken}` },
+      })
+      const body = await res.json()
+      if (res.ok) {
+        if (body.session) {
+          setSession((s) =>
+            s
+              ? {
+                  ...s,
+                  duration_seconds: body.session.duration_seconds,
+                  calories_burned: body.session.calories_burned,
+                }
+              : s
+          )
+        }
+        const changed = Object.keys(body.changes ?? {})
+        setRecalcMsg({
+          ok: true,
+          text:
+            changed.length > 0
+              ? `Recalculado: ${changed.map((k) => (k === 'duration_seconds' ? 'duración' : 'calorías')).join(' y ')}`
+              : 'Sin cambios necesarios',
+        })
+      } else {
+        setRecalcMsg({ ok: false, text: body.error ?? 'Error al recalcular' })
+      }
+    } catch {
+      setRecalcMsg({ ok: false, text: 'Error de red' })
+    }
+    setRecalculating(false)
+  }
 
   // ── Save session metadata ──
   async function handleSaveSession() {
@@ -554,12 +599,31 @@ export default function SessionDetailPage() {
               <p className="text-gray-300 text-sm mt-2 max-w-lg">{session.notes}</p>
             )}
           </div>
-          <button
-            onClick={() => setEditMode(true)}
-            className="text-xs text-gray-400 border border-gray-700 rounded-lg px-3 py-1.5 hover:border-gray-500 hover:text-white transition-colors"
-          >
-            Editar
-          </button>
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleRecalculate}
+                disabled={recalculating}
+                className="text-xs text-gray-400 border border-gray-700 rounded-lg px-3 py-1.5 hover:border-brand hover:text-brand transition-colors disabled:opacity-50"
+                title="Recalcular duración y calorías desde los datos GPS y tu perfil"
+              >
+                {recalculating ? 'Recalculando…' : 'Recalcular'}
+              </button>
+              <button
+                onClick={() => setEditMode(true)}
+                className="text-xs text-gray-400 border border-gray-700 rounded-lg px-3 py-1.5 hover:border-gray-500 hover:text-white transition-colors"
+              >
+                Editar
+              </button>
+            </div>
+            {recalcMsg && (
+              <span
+                className={`text-xs ${recalcMsg.ok ? 'text-green-400' : 'text-red-400'} flex items-center gap-1`}
+              >
+                {recalcMsg.ok ? '✓' : '✕'} {recalcMsg.text}
+              </span>
+            )}
+          </div>
         </div>
       )}
 
